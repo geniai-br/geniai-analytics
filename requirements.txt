@@ -1,0 +1,12 @@
+# Core dependencies
+pandas==2.1.4
+sqlalchemy==2.0.25
+psycopg2-binary==2.9.9
+python-dotenv==1.0.0
+
+# Optional: for data visualization in future dashboard
+plotly==5.18.0
+streamlit==1.29.0
+
+# Development dependencies
+ipython==8.19.0
