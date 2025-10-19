@@ -52,3 +52,10 @@ htmlcov/
 # Data
 data/
 *.csv
+
+# Logs
+logs/
+*.log
+
+# Docs archive (planejamento histórico - mantido para referência)
+docs/archive/

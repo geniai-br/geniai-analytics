@@ -4,24 +4,41 @@ Dashboard para análise de conversas de agente de IA do sistema Chatwoot.
 
 ## 📋 Descrição
 
-Este projeto extrai dados de conversas de um banco PostgreSQL externo (Chatwoot), processa as informações e cria um dashboard interativo para análise de métricas e comportamento do agente de IA.
+Sistema completo de analytics que extrai dados de conversas do Chatwoot (banco remoto), processa via ETL e armazena localmente para análises rápidas. Inclui 60+ KPIs mapeados para análise profunda do comportamento do agente de IA.
 
 ## 🏗️ Estrutura do Projeto
 
 ```
 allpfit-analytics/
 ├── src/
-│   ├── app/              # Dashboard e visualizações (Streamlit)
-│   ├── features/         # Pipeline ETL e processamento de dados
-│   │   └── etl_pipeline.py
-│   └── shared/           # Utilitários e configurações compartilhadas
-│       ├── config.py     # Configurações centralizadas
-│       └── database.py   # Gerenciador de conexões DB
-├── data/                 # Dados extraídos (CSV backups)
-├── venv/                 # Ambiente virtual Python
-├── .env                  # Variáveis de ambiente (NÃO versionado)
-├── .env.example          # Template de configuração
-├── requirements.txt      # Dependências do projeto
+│   ├── app/                    # Dashboard Streamlit (em desenvolvimento)
+│   ├── features/               # Pipeline ETL e processamento
+│   │   └── etl_pipeline_v2.py  # ETL principal (120 campos)
+│   └── shared/                 # Código compartilhado
+│       ├── config.py           # Configurações centralizadas
+│       └── database.py         # Conexões de banco
+│
+├── sql/
+│   ├── modular_views/          # Views do banco remoto (Chatwoot)
+│   │   ├── 00_deploy_all_views_CLEAN.sql  # Deploy de todas as views
+│   │   ├── 01-06_*.sql         # Views modulares
+│   │   └── 07_vw_conversations_analytics_final.sql  # View final (118 campos)
+│   └── local_schema/
+│       └── 01_create_schema.sql  # Schema do banco local
+│
+├── scripts/                    # Scripts utilitários
+│   ├── test_connection.py
+│   └── test_new_views.py
+│
+├── docs/                       # Documentação completa
+│   ├── dashboard_kpis_completo.md  # 60+ KPIs mapeados
+│   ├── etl_resumo_sucesso.md       # Resumo do ETL
+│   └── schema_explicacao.md        # Explicação do schema
+│
+├── data/backups/               # Backups CSV (não versionados)
+├── .env                        # Credenciais (não versionado)
+├── .env.example                # Template de configuração
+├── requirements.txt            # Dependências
 └── README.md
 ```
 
@@ -39,8 +56,6 @@ cd allpfit-analytics
 ```bash
 python3 -m venv venv
 source venv/bin/activate  # Linux/Mac
-# ou
-venv\Scripts\activate  # Windows
 ```
 
 ### 3. Instalar dependências
@@ -52,105 +67,192 @@ pip install -r requirements.txt
 
 ### 4. Configurar variáveis de ambiente
 
-Copie o arquivo de exemplo e configure suas credenciais:
+Copie o arquivo de exemplo e configure:
 
 ```bash
 cp .env.example .env
+nano .env  # ou seu editor preferido
 ```
 
-Edite o arquivo `.env` com suas credenciais:
+Configuração do `.env`:
 
 ```env
-# Banco de dados externo (Chatwoot)
-SOURCE_DB_HOST=seu_host
+# Banco REMOTO (Chatwoot - source)
+SOURCE_DB_HOST=178.156.206.184
 SOURCE_DB_PORT=5432
 SOURCE_DB_NAME=chatwoot
-SOURCE_DB_USER=seu_usuario
+SOURCE_DB_USER=hetzner_dev_isaac_read
 SOURCE_DB_PASSWORD=sua_senha
-SOURCE_DB_VIEW=vw_conversas_por_lead
+SOURCE_DB_VIEW=vw_conversations_analytics_final
 
-# Banco de dados local (onde os dados serão armazenados)
-LOCAL_DB_HOST=/var/run/postgresql
+# Banco LOCAL (Analytics - destino)
+LOCAL_DB_HOST=localhost
 LOCAL_DB_PORT=5432
-LOCAL_DB_NAME=allpfit_analytics
-LOCAL_DB_USER=seu_usuario_local
-LOCAL_DB_TABLE=conversas_lead
+LOCAL_DB_NAME=allpfit
+LOCAL_DB_USER=isaac
+LOCAL_DB_PASSWORD=sua_senha
+LOCAL_DB_TABLE=conversas_analytics
 ```
 
-### 5. Testar conexão
+### 5. Configurar banco local
 
 ```bash
-python test_connection.py
+# Criar banco PostgreSQL local
+sudo -u postgres psql -c "CREATE DATABASE allpfit OWNER isaac;"
+
+# Criar schema
+psql -U isaac -d allpfit -f sql/local_schema/01_create_schema.sql
 ```
 
-## 📊 Dados
+## 🔄 Pipeline ETL
 
-### View: `vw_conversas_por_lead`
-
-A view do banco externo contém as seguintes colunas:
-
-- **conversation_id**: ID único da conversa
-- **message_compiled**: Array JSON com todas as mensagens da conversa
-- **client_sender_id**: ID do cliente/lead
-- **inbox_id**: ID do canal (inbox)
-- **client_phone**: Telefone do cliente
-- **t_messages**: Total de mensagens na conversa
-
-## 🔧 Uso
-
-### Pipeline ETL
-
-Extrai dados do banco remoto e carrega no banco local:
+### Executar ETL manualmente
 
 ```bash
-python -m src.features.etl_pipeline
+python3 src/features/etl_pipeline_v2.py
 ```
 
-### Dashboard (em desenvolvimento)
+**O que o ETL faz:**
+1. **EXTRACT:** Busca dados da view `vw_conversations_analytics_final` (remoto)
+2. **TRANSFORM:** Processa e limpa 118 campos
+3. **LOAD:** Insere 4.169+ conversas no banco local
+4. **BACKUP:** Salva CSV em `data/backups/`
+5. **STATS:** Mostra estatísticas dos dados
+
+**Performance:**
+- ⚡ 4.169 conversas em ~6 segundos
+- 📊 118 campos da view remota → 120 campos locais
+- 💾 Backup automático de 14+ MB
+
+### Agendar ETL (1x por dia às 3h)
 
 ```bash
-streamlit run src/app/dashboard.py
+# Editar crontab
+crontab -e
+
+# Adicionar:
+0 3 * * * cd /home/isaac/projects/allpfit-analytics && source venv/bin/activate && python3 src/features/etl_pipeline_v2.py >> logs/etl_$(date +\%Y\%m\%d).log 2>&1
 ```
+
+## 📊 Dados e Views
+
+### Arquitetura
+
+```
+BANCO REMOTO (Chatwoot)
+    ↓
+7 Views Modulares
+    ↓
+vw_conversations_analytics_final (118 campos)
+    ↓
+ETL Pipeline
+    ↓
+BANCO LOCAL (allpfit)
+    ↓
+conversas_analytics (121 colunas, 16 índices)
+    ↓
+Dashboard Streamlit
+```
+
+### Views Remotas (já criadas no Chatwoot)
+
+1. `vw_conversations_base_complete` - Dados base
+2. `vw_messages_compiled_complete` - Mensagens em JSON
+3. `vw_csat_base` - Satisfação (CSAT/NPS)
+4. `vw_conversation_metrics_complete` - Métricas e flags
+5. `vw_message_stats_complete` - Estatísticas de mensagens
+6. `vw_temporal_metrics` - Análise temporal
+7. `vw_conversations_analytics_final` - **View final com tudo**
+
+### Tabela Local
+
+**conversas_analytics:**
+- 121 colunas (120 de dados + 1 ID auto-increment)
+- 16 índices para performance
+- Campos de controle: `etl_inserted_at`, `etl_updated_at`
+
+**Principais campos:**
+- Identificação: conversation_id, display_id, contact_name, contact_phone
+- Status: status, status_label_pt, priority
+- Mensagens: message_compiled (JSON), t_messages
+- CSAT: csat_rating, csat_nps_category
+- Métricas: first_response_time, resolution_time
+- Flags: has_human_intervention, is_bot_resolved, has_csat
+- Temporal: conversation_date, year, month, hour, period
 
 ## 🛠️ Tecnologias
 
 - **Python 3.11+**
-- **PostgreSQL** - Banco de dados
+- **PostgreSQL 15** - Banco de dados (remoto + local)
 - **Pandas** - Processamento de dados
-- **SQLAlchemy** - ORM e conexões DB
-- **Streamlit** - Dashboard interativo
+- **SQLAlchemy** - ORM e conexões
+- **Streamlit** - Dashboard interativo (em desenvolvimento)
 - **Plotly** - Visualizações
-- **python-dotenv** - Gerenciamento de variáveis de ambiente
+- **python-dotenv** - Variáveis de ambiente
 
-## 📝 Desenvolvimento
+## 📈 KPIs Disponíveis
 
-### Estrutura de Módulos
+60+ KPIs mapeados em 6 níveis:
 
-- **src/app/**: Código do dashboard e interface
-- **src/features/**: Features e pipeline de dados
-- **src/shared/**: Código compartilhado (config, utils, database)
+1. **Executive (15 KPIs)** - Visão macro
+2. **Operacional (12 KPIs)** - Eficiência
+3. **Qualidade (10 KPIs)** - CSAT e satisfação
+4. **Segmentos (15 KPIs)** - Por canal, time, agente
+5. **Temporal (8 KPIs)** - Tendências e sazonalidade
+6. **Drill-down** - Detalhamento individual
 
-### Boas Práticas
+Ver: `docs/dashboard_kpis_completo.md`
 
-1. Sempre ative o ambiente virtual antes de trabalhar
-2. Nunca commite o arquivo `.env` (já está no .gitignore)
-3. Mantenha o `requirements.txt` atualizado
-4. Use o módulo `config.py` para acessar configurações
+## 🧪 Testes
+
+```bash
+# Testar conexão com banco remoto
+python3 scripts/test_connection.py
+
+# Testar views remotas
+python3 scripts/test_new_views.py
+
+# Validar dados locais
+psql -U isaac -d allpfit -c "SELECT COUNT(*) FROM conversas_analytics;"
+```
+
+## 📚 Documentação
+
+- `docs/dashboard_kpis_completo.md` - Lista completa de KPIs
+- `docs/etl_resumo_sucesso.md` - Como funciona o ETL
+- `docs/schema_explicacao.md` - Estrutura do banco local
+- `sql/modular_views/README.md` - Documentação das views
 
 ## 🔒 Segurança
 
-- Credenciais nunca devem ser commitadas no repositório
-- Use o arquivo `.env` para desenvolvimento local
-- Use variáveis de ambiente para produção
+- ✅ Credenciais em `.env` (não versionado)
+- ✅ Usuário read-only no banco remoto
+- ✅ Banco local isolado
+- ✅ Backups automáticos
 
-## 📈 Próximos Passos
+## ✅ Status do Projeto
 
-- [ ] Configurar banco de dados local
-- [ ] Melhorar pipeline ETL (logging, validações)
-- [ ] Criar schema do banco local
-- [ ] Desenvolver dashboard Streamlit
-- [ ] Adicionar análises e métricas de IA
-- [ ] Implementar testes automatizados
+### Concluído ✅
+
+- [x] Views modulares no banco remoto (7 views)
+- [x] Schema do banco local (121 colunas, 16 índices)
+- [x] ETL Pipeline V2 funcionando (6 segundos)
+- [x] Backup automático em CSV
+- [x] Documentação completa
+- [x] Mapeamento de 60+ KPIs
+
+### Em Desenvolvimento 🚧
+
+- [ ] Dashboard Streamlit
+- [ ] Visualizações interativas
+- [ ] Filtros e drill-down
+
+### Futuro 💡
+
+- [ ] Agendamento automático (cron)
+- [ ] Alertas e notificações
+- [ ] API REST para consultas
+- [ ] Análise preditiva com ML
 
 ## 👥 Equipe
 

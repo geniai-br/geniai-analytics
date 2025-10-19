@@ -29,7 +29,7 @@ SELECT
 
     -- Tempo até resolução (se resolvida)
     CASE
-        WHEN c.status IN ('resolved', 'closed') AND c.updated_at IS NOT NULL AND c.created_at IS NOT NULL
+        WHEN c.status IN (1, 4) AND c.updated_at IS NOT NULL AND c.created_at IS NOT NULL
         THEN EXTRACT(EPOCH FROM (c.updated_at - c.created_at))::INTEGER
         ELSE NULL
     END AS resolution_time_seconds,
@@ -52,13 +52,13 @@ SELECT
     (c.team_id IS NOT NULL) AS has_team,
 
     -- Está resolvida?
-    (c.status IN ('resolved', 'closed')) AS is_resolved,
+    (c.status IN (1, 4)) AS is_resolved,
 
     -- Está aberta ou pendente?
-    (c.status IN ('open', 'pending')) AS is_open,
+    (c.status IN (0, 2)) AS is_open,
 
     -- Está pendente especificamente?
-    (c.status = 'pending') AS is_pending,
+    (c.status = 2) AS is_pending,
 
     -- Está adiada (snoozed)?
     (c.snoozed_until IS NOT NULL AND c.snoozed_until > NOW()) AS is_snoozed,
@@ -77,7 +77,7 @@ SELECT
     (c.priority IS NOT NULL AND c.priority > 0) AS has_priority,
 
     -- É alta prioridade?
-    (c.priority >= 3) AS is_high_priority,  -- 3=high, 4=urgent
+    (c.priority >= 3) AS is_high_priority,
 
     -- Veio de campanha?
     (c.campaign_id IS NOT NULL) AS is_from_campaign,
@@ -102,7 +102,7 @@ SELECT
 
     -- Resolução rápida? (<2 horas)
     CASE
-        WHEN c.status IN ('resolved', 'closed') AND c.updated_at IS NOT NULL AND c.created_at IS NOT NULL
+        WHEN c.status IN (1, 4) AND c.updated_at IS NOT NULL AND c.created_at IS NOT NULL
         THEN EXTRACT(EPOCH FROM (c.updated_at - c.created_at)) < 7200
         ELSE NULL
     END AS is_fast_resolution,
@@ -143,12 +143,12 @@ SELECT
 
     -- Status em português
     CASE c.status
-        WHEN 'open' THEN 'Aberta'
-        WHEN 'pending' THEN 'Pendente'
-        WHEN 'resolved' THEN 'Resolvida'
-        WHEN 'closed' THEN 'Fechada'
-        WHEN 'snoozed' THEN 'Adiada'
-        ELSE c.status
+        WHEN 0 THEN 'Aberta'
+        WHEN 2 THEN 'Pendente'
+        WHEN 1 THEN 'Resolvida'
+        WHEN 4 THEN 'Fechada'
+        WHEN 3 THEN 'Adiada'
+        ELSE 'Desconhecido'
     END AS status_label_pt
 
 FROM conversations c;
@@ -160,6 +160,7 @@ FROM conversations c;
 COMMENT ON VIEW vw_conversation_metrics_complete IS
 'View de métricas calculadas e flags booleanos das conversas.
 Inclui: tempos de resposta, resolução, espera, status, prioridades.
-Performance: Rápida, apenas cálculos sobre a tabela conversations.';
+Performance: Rápida, apenas cálculos sobre a tabela conversations.
+NOTA: Status é INTEGER no Chatwoot: 0=open, 1=resolved, 2=pending, 3=snoozed, 4=closed';
 
 GRANT SELECT ON vw_conversation_metrics_complete TO hetzner_dev_isaac_read;
