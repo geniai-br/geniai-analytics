@@ -96,16 +96,8 @@ SELECT
     -- ========================================
 
     -- Média de sentiment das mensagens (se disponível)
-    ROUND(
-        AVG(
-            CASE
-                WHEN m.sentiment IS NOT NULL
-                THEN m.sentiment::NUMERIC
-                ELSE NULL
-            END
-        ),
-        3
-    ) AS avg_sentiment_score,
+    -- NOTA: Campo sentiment desabilitado pois é JSONB, não numérico
+    NULL AS avg_sentiment_score,
 
     -- Quantidade de mensagens com sentiment
     COUNT(*) FILTER (WHERE m.sentiment IS NOT NULL) AS messages_with_sentiment_count,
