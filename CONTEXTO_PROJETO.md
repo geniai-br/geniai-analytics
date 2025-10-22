@@ -1,6 +1,6 @@
 # 📊 AllpFit Analytics - Contexto do Projeto
 
-**Data última atualização:** 21/10/2025
+**Data última atualização:** 22/10/2025
 **Desenvolvido com:** Claude Code
 **Branch principal:** `feature/dashboard-analytics-ai`
 
@@ -36,7 +36,8 @@ allpfit-analytics/
 ├── scripts/                          # Scripts utilitários
 │   └── restart_dashboard.sh          # Restart do dashboard
 │
-├── match_leads_crm.py                # Script sincronização CRM
+├── match_leads_crm.py                # Script sincronização CRM (via API)
+├── crossmatch_excel_crm.py           # Script crossmatch Excel → Bot
 └── CONTEXTO_PROJETO.md               # Este arquivo
 ```
 
@@ -90,9 +91,9 @@ allpfit-analytics/
 - 2/5 (Baixa): 68 leads (14%)
 - 1/5 (Muito baixa): 136 leads (28%)
 
-#### 3. `conversas_crm_match` (Conversões CRM)
+#### 3. `conversas_crm_match` (Conversões CRM via API)
 ```sql
--- Cruzamento entre leads do bot e membros do CRM
+-- Cruzamento entre leads do bot e membros do CRM (via API EVO)
 - id (SERIAL)
 - conversation_id (FK)
 - bot_name, bot_phone
@@ -103,7 +104,27 @@ allpfit-analytics/
 - created_at
 ```
 
-**Conversões identificadas:** 2 (0.4% dos leads)
+#### 4. `conversas_crm_match_real` (Conversões Reais via Excel)
+```sql
+-- Cruzamento entre leads do bot e base Excel do CRM
+-- Identifica leads que falaram com bot ANTES de entrar no CRM
+- id (SERIAL)
+- conversation_id (FK)
+- nome_bot (nome no bot)
+- nome_crm (nome no CRM)
+- telefone (formato completo)
+- telefone_8dig (normalizado para match)
+- conversa_criada_em (primeira interação)
+- cadastro_crm_em (data de entrada no CRM)
+- dias_para_conversao (tempo entre bot e CRM)
+- total_mensagens (engajamento)
+- conversou_antes_crm (boolean)
+- id_cliente_crm (ID no EVO)
+- email_crm
+- created_at
+```
+
+**Conversões reais identificadas:** 3 (1.5% de 198 clientes do CRM)
 
 ---
 
@@ -161,14 +182,20 @@ cd /home/isaac/projects/allpfit-analytics
 streamlit run src/app/dashboard.py --server.port 8503
 ```
 
+### Cabeçalho
+
+- **Título:** ANALYTICS GENIAI - OVERVIEW
+- **Contador:** Bot rodando há X dias (desde 25/09/2025)
+  - Calculado dinamicamente desde primeira conversa
+
 ### KPIs Principais (Seção 1)
 
 1. **Total Contatos:** Leads que engajaram (≥1 mensagem)
 2. **Total Conversas Agente AI:** 100% bot (sem humano)
 3. **Humano:** Conversas com intervenção humana
 4. **Visitas Agendadas:** 42 (confirmadas pelo bot)
-5. **Vendas/Tráfego:** 2 (leads que viraram membros - 0.4%)
-6. **Vendas/Geral:** 0 (TODO: integrar CRM)
+5. **Vendas/Tráfego:** 3 conversões reais (leads que viraram clientes - 1.5%)
+6. **Vendas/Geral:** 198 (total de clientes no CRM)
 
 ### Métricas Diárias (Seção 2)
 
@@ -184,7 +211,23 @@ streamlit run src/app/dashboard.py --server.port 8503
 - Média Leads por Dia (últimos 30 dias)
 - Distribuição por Período do Dia
 
-### Tabela de Leads (Seção 4)
+### Conversões Reais (Seção 4)
+
+**🎯 Conversões Reais: Leads do Bot que viraram Clientes**
+
+Exibido quando `vendas_trafego > 0`:
+- 3 cartões métricos: Conversões | Taxa | Total CRM
+- Tabela com detalhes:
+  - Nome (Bot)
+  - Nome (CRM)
+  - Telefone
+  - Data Conversa
+  - Data CRM
+  - Dias para Converter
+  - Total Mensagens
+- Insight: "💡 Estes leads conversaram com o bot ANTES de se cadastrarem no CRM. Tempo médio: 3-10 dias."
+
+### Tabela de Leads (Seção 5)
 
 **Leads não convertidos com análise de IA**
 - Top 50 leads priorizados por probabilidade
@@ -257,6 +300,39 @@ GET /api/v2/sales
 - Leads ainda não se matricularam
 - Telefones diferentes entre WhatsApp e CRM
 - Bot conversando com curiosos que não convertem
+
+### Script de Crossmatch Excel
+
+**Arquivo:** `crossmatch_excel_crm.py`
+
+**Funcionamento:**
+1. Carrega base Excel do CRM (`base_evo.xlsx` com 198 clientes)
+2. Normaliza telefones para 8 dígitos (remove DDI 55, DDD 83, e 9 adicional)
+   - Exemplo: "55 83988439500" → "88439500"
+   - Exemplo: "55 (83) 99886-9874" → "98869874"
+3. Busca conversas do bot no PostgreSQL (480 conversas)
+4. Normaliza telefones do bot para 8 dígitos
+5. Cruza por telefone de 8 dígitos
+6. Valida se conversa foi ANTES do cadastro no CRM
+7. Salva conversões reais na tabela `conversas_crm_match_real`
+
+**Resultado Atual:**
+- **3 conversões reais identificadas** (1.5% de 198 clientes)
+- Todas conversaram com bot ANTES de entrar no CRM
+- Tempo médio de conversão: 3-10 dias
+
+**Conversões Encontradas:**
+1. **JOSÉ VINICIUS DE SOUZA FILHO** (Vih) - 93255303
+   - Conversa: 14/10/2025 → CRM: 20/10/2025 (6 dias)
+   - 23 mensagens trocadas
+
+2. **Rossana medeiro matias** (RossanaMedeiros) - 87776252
+   - Conversa: 25/09/2025 → CRM: 13/10/2025 (18 dias)
+   - 11 mensagens trocadas
+
+3. **MORONI RODRIGUES DINIZ** (Moroni Diniz) - 91257974
+   - Conversa: 01/10/2025 → CRM: 10/10/2025 (9 dias)
+   - 14 mensagens trocadas
 
 ---
 

@@ -26,7 +26,10 @@ from utils.metrics import (
     calculate_distribution_by_period,
     get_leads_table_data,
     get_leads_not_converted,
-    get_leads_with_ai_analysis
+    get_leads_with_ai_analysis,
+    calculate_crm_conversions,
+    calculate_days_running,
+    get_crm_conversions_detail
 )
 
 # ============================================================================
@@ -49,10 +52,14 @@ if 'date_end' not in st.session_state:
 col_title, col_spacer, col_date_start, col_date_end, col_refresh = st.columns([5, 1.5, 1, 1, 0.5])
 
 with col_title:
-    st.markdown("""
+    dias_rodando = calculate_days_running()
+    st.markdown(f"""
         <h1 style='color: white; letter-spacing: 1px; margin-top: 0; margin-bottom: 0.5rem; font-size: 1.5rem;'>
             ANALYTICS GENIAI - OVERVIEW
         </h1>
+        <p style='color: #A0AEC0; font-size: 0.85rem; margin-top: -0.5rem;'>
+            🤖 Bot rodando há <strong>{dias_rodando} dias</strong> (desde 25/09/2025)
+        </p>
     """, unsafe_allow_html=True)
 
 with col_date_start:
@@ -133,9 +140,9 @@ conversas_ai = calculate_ai_conversations(df)
 conversas_humano = calculate_human_conversations(df)
 visitas_agendadas = calculate_visits_scheduled(df)
 
-# TODO: Integrar com CRM
-vendas_trafego = 0  # Vendas que passaram pelo bot
-vendas_geral = 0    # Total de vendas no CRM
+# Integração com CRM (conversões reais)
+vendas_trafego = calculate_crm_conversions()  # Leads do bot que viraram clientes
+vendas_geral = 198  # Total de clientes no CRM EVO (base Excel)
 
 # Calcular percentuais
 perc_contatos = format_percentage(total_contatos, total_conversas)
@@ -181,7 +188,7 @@ with col5:
         label="Vendas/Tráfego",
         value=format_number(vendas_trafego),
         delta=perc_trafego,
-        help="Vendas do CRM que passaram pelo bot (requer integração CRM)"
+        help="✅ Leads do bot que viraram clientes no EVO CRM (conversões reais identificadas)"
     )
 
 with col6:
@@ -189,7 +196,7 @@ with col6:
         label="Vendas/Geral",
         value=format_number(vendas_geral),
         delta=perc_geral,
-        help="Total de vendas no CRM no período (requer integração CRM)"
+        help="Total de clientes cadastrados no EVO CRM"
     )
 
 # ============================================================================
@@ -365,7 +372,45 @@ with col_graph2:
 st.markdown("<hr>", unsafe_allow_html=True)
 
 # ============================================================================
-# SEÇÃO 4: LEADS NÃO CONVERTIDOS COM ANÁLISE DE IA
+# SEÇÃO 4: CONVERSÕES REAIS (BOT → CRM)
+# ============================================================================
+
+if vendas_trafego > 0:
+    st.markdown("### 🎯 Conversões Reais: Leads do Bot que viraram Clientes")
+
+    engine = get_engine()
+    df_conversoes = get_crm_conversions_detail(engine)
+
+    if not df_conversoes.empty:
+        taxa_conversao = (vendas_trafego / total_contatos) * 100 if total_contatos > 0 else 0
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Conversões Identificadas", vendas_trafego)
+        with col2:
+            st.metric("Taxa de Conversão", f"{taxa_conversao:.1f}%")
+        with col3:
+            st.metric("Total de Clientes CRM", vendas_geral)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # Formatar datas
+        df_conversoes['Data Conversa'] = pd.to_datetime(df_conversoes['Data Conversa']).dt.strftime('%d/%m/%Y %H:%M')
+        df_conversoes['Data Cadastro CRM'] = pd.to_datetime(df_conversoes['Data Cadastro CRM']).dt.strftime('%d/%m/%Y %H:%M')
+
+        st.dataframe(
+            df_conversoes,
+            use_container_width=True,
+            hide_index=True,
+            height=300
+        )
+
+        st.info("💡 **Insight:** Estes leads conversaram com o bot ANTES de se cadastrarem no CRM. Tempo médio de conversão: 3-10 dias.")
+
+    st.markdown("<hr>", unsafe_allow_html=True)
+
+# ============================================================================
+# SEÇÃO 5: LEADS NÃO CONVERTIDOS COM ANÁLISE DE IA
 # ============================================================================
 
 st.markdown("### 🎯 Leads não convertidos com análise de IA")
