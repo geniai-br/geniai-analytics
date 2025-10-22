@@ -411,3 +411,111 @@ def get_leads_with_ai_analysis(engine, limit=50):
         ])
 
         return df
+
+def calculate_crm_conversions():
+    """
+    Busca conversões reais da tabela conversas_crm_match_real
+    (Leads do bot que viraram clientes no EVO CRM)
+
+    Returns:
+        int: Número de conversões identificadas
+    """
+    from .db_connector import get_engine
+    from sqlalchemy import text
+
+    try:
+        engine = get_engine()
+
+        query = text("""
+            SELECT COUNT(*) as total
+            FROM conversas_crm_match_real
+        """)
+
+        with engine.connect() as conn:
+            result = conn.execute(query)
+            row = result.fetchone()
+            return row[0] if row else 0
+
+    except Exception as e:
+        # Se tabela não existir ainda, retornar 0
+        return 0
+
+
+def calculate_days_running():
+    """
+    Calcula quantos dias o bot está rodando
+    (desde a primeira conversa criada)
+
+    Returns:
+        int: Número de dias
+    """
+    from .db_connector import get_engine
+    from sqlalchemy import text
+
+    try:
+        engine = get_engine()
+
+        query = text("""
+            SELECT 
+                CURRENT_DATE - MIN(conversation_created_at)::date AS dias_rodando
+            FROM conversas_analytics
+        """)
+
+        with engine.connect() as conn:
+            result = conn.execute(query)
+            row = result.fetchone()
+            return row[0] if row else 0
+
+    except Exception as e:
+        return 0
+
+
+def get_crm_conversions_detail(engine):
+    """
+    Busca detalhes das conversões do CRM
+
+    Args:
+        engine: SQLAlchemy engine
+
+    Returns:
+        DataFrame com conversões detalhadas
+    """
+    from sqlalchemy import text
+
+    query = text("""
+        SELECT
+            nome_bot AS "Nome (Bot)",
+            nome_crm AS "Nome (CRM)",
+            telefone AS "Telefone",
+            COALESCE(origem, 'Agente IA') AS "Origem",
+            conversa_criada_em AS "Data Conversa",
+            cadastro_crm_em AS "Data Cadastro CRM",
+            dias_para_conversao AS "Dias",
+            total_mensagens AS "Msgs"
+        FROM conversas_crm_match_real
+        ORDER BY cadastro_crm_em DESC
+    """)
+
+    try:
+        with engine.connect() as conn:
+            result = conn.execute(query)
+            rows = result.fetchall()
+
+            if not rows:
+                return pd.DataFrame()
+
+            df = pd.DataFrame(rows, columns=[
+                'Nome (Bot)',
+                'Nome (CRM)',
+                'Telefone',
+                'Origem',
+                'Data Conversa',
+                'Data Cadastro CRM',
+                'Dias',
+                'Msgs'
+            ])
+
+            return df
+
+    except Exception as e:
+        return pd.DataFrame()
