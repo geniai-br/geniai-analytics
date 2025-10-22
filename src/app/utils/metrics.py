@@ -107,13 +107,46 @@ def detect_visit_scheduled(message_compiled):
 
 def calculate_visits_scheduled(df):
     """
-    Total de visitas agendadas pelo bot
+    Total de visitas agendadas pelo bot (confirmadas)
+    Busca diretamente do banco para garantir precisão
     """
-    if 'message_compiled' not in df.columns:
-        return 0
+    from .db_connector import get_engine
+    from sqlalchemy import text
 
-    df['has_visit'] = df['message_compiled'].apply(detect_visit_scheduled)
-    return df['has_visit'].sum()
+    try:
+        engine = get_engine()
+
+        # Query para contar visitas confirmadas pelo bot
+        query = text("""
+            WITH bot_confirmations AS (
+                SELECT DISTINCT ca.conversation_id
+                FROM conversas_analytics ca,
+                     jsonb_array_elements(ca.message_compiled) as msg
+                WHERE ca.contact_messages_count > 0
+                  AND ca.contact_name <> 'Isaac'
+                  AND (msg->>'sender' = 'AgentBot' OR msg->>'sender' IS NULL)
+                  AND (
+                      msg->>'text' ILIKE '%visita agendada%' OR
+                      msg->>'text' ILIKE '%agendamento confirmado%' OR
+                      msg->>'text' ILIKE '%já agendei%' OR
+                      msg->>'text' ILIKE '%te espero%'
+                  )
+            )
+            SELECT COUNT(*) as total
+            FROM bot_confirmations
+        """)
+
+        with engine.connect() as conn:
+            result = conn.execute(query)
+            row = result.fetchone()
+            return row[0] if row else 0
+
+    except Exception as e:
+        # Fallback para método antigo se houver erro
+        if 'message_compiled' not in df.columns:
+            return 0
+        df['has_visit'] = df['message_compiled'].apply(detect_visit_scheduled)
+        return df['has_visit'].sum()
 
 
 def calculate_daily_metrics(df):
