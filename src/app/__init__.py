@@ -1,3 +1,6 @@
 """
-Módulo da aplicação - Dashboard e visualizações
+Analytics GenIAI Dashboard
+AllpFit Bot Performance Analytics
 """
+
+__version__ = "2.0.0"

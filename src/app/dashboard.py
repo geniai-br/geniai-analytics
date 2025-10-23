@@ -1,0 +1,518 @@
+"""
+Dashboard Principal - Analytics GenIAI
+AllpFit Bot Performance Analytics
+"""
+
+import streamlit as st
+import pandas as pd
+import plotly.graph_objects as go
+import plotly.express as px
+from datetime import datetime, timedelta
+
+# Imports locais
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from config import configure_page, THEME, format_number, format_percentage, format_phone, format_datetime, format_date_pt, format_conversation_readable
+from utils.db_connector import get_all_conversations, get_conversations_today, clear_cache, get_engine
+from utils.metrics import (
+    calculate_total_contacts,
+    calculate_ai_conversations,
+    calculate_human_conversations,
+    calculate_visits_scheduled,
+    calculate_daily_metrics,
+    calculate_leads_by_day,
+    calculate_distribution_by_period,
+    get_leads_table_data,
+    get_leads_not_converted,
+    get_leads_with_ai_analysis,
+    calculate_crm_conversions,
+    calculate_days_running,
+    get_crm_conversions_detail
+)
+
+# ============================================================================
+# CONFIGURAÇÃO DA PÁGINA
+# ============================================================================
+
+configure_page()
+
+# ============================================================================
+# CABEÇALHO
+# ============================================================================
+
+# Inicializar session state para filtros
+if 'date_start' not in st.session_state:
+    st.session_state.date_start = None
+if 'date_end' not in st.session_state:
+    st.session_state.date_end = None
+
+# Header com título e filtros no canto direito
+col_title, col_spacer, col_date_start, col_date_end, col_refresh = st.columns([5, 1.5, 1, 1, 0.5])
+
+with col_title:
+    dias_rodando = calculate_days_running()
+    st.markdown(f"""
+        <h1 style='color: white; letter-spacing: 1px; margin-top: 0; margin-bottom: 0.5rem; font-size: 1.5rem;'>
+            ANALYTICS GENIAI - OVERVIEW
+        </h1>
+        <p style='color: #A0AEC0; font-size: 0.85rem; margin-top: -0.5rem;'>
+            🤖 Bot rodando há <strong>{dias_rodando} dias</strong> (desde 25/09/2025)
+        </p>
+    """, unsafe_allow_html=True)
+
+with col_date_start:
+    date_start = st.date_input(
+        "Início",
+        value=st.session_state.date_start,
+        format="DD/MM/YYYY",
+        key="filter_date_start"
+    )
+    st.session_state.date_start = date_start
+
+with col_date_end:
+    date_end = st.date_input(
+        "Fim",
+        value=st.session_state.date_end,
+        format="DD/MM/YYYY",
+        key="filter_date_end"
+    )
+    st.session_state.date_end = date_end
+
+with col_refresh:
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("🗑️", help="Limpar filtros"):
+        st.session_state.date_start = None
+        st.session_state.date_end = None
+        clear_cache()
+        st.rerun()
+
+st.markdown("<hr>", unsafe_allow_html=True)
+
+# ============================================================================
+# CARREGAR DADOS
+# ============================================================================
+
+@st.cache_data(ttl=300)
+def load_data():
+    """Carrega dados do banco"""
+    return get_all_conversations()
+
+# Carregar todos os dados
+df_all = load_data()
+
+# Aplicar filtro de período (Data Início e Data Fim)
+df = df_all.copy()
+
+if date_start is not None:
+    df = df[df['conversation_date'] >= date_start]
+
+if date_end is not None:
+    df = df[df['conversation_date'] <= date_end]
+
+if df.empty:
+    st.error("❌ Nenhum dado encontrado no banco de dados")
+    st.stop()
+
+total_conversas = len(df)
+total_conversas_banco = len(df_all)
+
+# Mostrar indicador de filtro
+if total_conversas < total_conversas_banco:
+    filter_text = []
+    if date_start:
+        filter_text.append(f"a partir de {date_start.strftime('%d/%m/%Y')}")
+    if date_end:
+        filter_text.append(f"até {date_end.strftime('%d/%m/%Y')}")
+
+    filter_display = " ".join(filter_text) if filter_text else "ativo"
+    st.info(f"🔍 Mostrando **{total_conversas:,}** de **{total_conversas_banco:,}** conversas ({filter_display})")
+    st.markdown("<br>", unsafe_allow_html=True)
+
+# ============================================================================
+# SEÇÃO 1: KPIs PRINCIPAIS (6 CARDS)
+# ============================================================================
+
+# Calcular métricas
+total_contatos = calculate_total_contacts(df)
+conversas_ai = calculate_ai_conversations(df)
+conversas_humano = calculate_human_conversations(df)
+visitas_agendadas = calculate_visits_scheduled(df)
+
+# Integração com CRM (conversões reais)
+vendas_trafego = calculate_crm_conversions()  # Leads do bot que viraram clientes
+vendas_geral = 198  # Total de clientes no CRM EVO (base Excel)
+
+# Calcular percentuais
+perc_contatos = format_percentage(total_contatos, total_conversas)
+perc_ai = format_percentage(conversas_ai, total_conversas)
+perc_humano = format_percentage(conversas_humano, total_conversas)
+perc_visitas = format_percentage(visitas_agendadas, total_conversas)
+perc_trafego = format_percentage(vendas_trafego, vendas_geral) if vendas_geral > 0 else "0%"
+perc_geral = "N/A"  # Vendas gerais não tem percentual em relação a conversas
+
+# Exibir cards
+col1, col2, col3, col4, col5, col6 = st.columns(6)
+
+with col1:
+    st.metric(
+        label="Total Contatos",
+        value=format_number(total_contatos),
+        delta=perc_contatos,
+        help="📊 Número de leads únicos que engajaram com o bot (enviaram pelo menos 1 mensagem)"
+    )
+
+with col2:
+    st.metric(
+        label="Total conversas Agente AI",
+        value=format_number(conversas_ai),
+        delta=perc_ai,
+        help="🤖 Conversas gerenciadas 100% pelo bot, sem intervenção humana"
+    )
+
+with col3:
+    st.metric(
+        label="Humano",
+        value=format_number(conversas_humano),
+        delta=perc_humano,
+        help="👤 Conversas que tiveram intervenção humana da equipe"
+    )
+
+with col4:
+    st.metric(
+        label="Visitas agendadas",
+        value=format_number(visitas_agendadas),
+        delta=perc_visitas,
+        help="📅 Leads que agendaram visita à academia (confirmados pelo bot)"
+    )
+
+with col5:
+    st.metric(
+        label="Vendas/Tráfego",
+        value=format_number(vendas_trafego),
+        delta=perc_trafego,
+        help="🎯 Leads que conversaram com o bot ANTES de se matricularem no CRM (conversões reais rastreadas). Percentual = Vendas Tráfego / Vendas Geral."
+    )
+
+with col6:
+    st.metric(
+        label="Vendas/Geral",
+        value=format_number(vendas_geral),
+        delta=perc_geral,
+        help="💼 Total de clientes cadastrados no CRM da academia (todas as fontes: bot, indicação, orgânico, etc)"
+    )
+
+# ============================================================================
+# SEÇÃO 2: RESULTADO DIÁRIO
+# ============================================================================
+
+st.markdown("<hr style='border: 1px dashed #262B3D; margin: 0.8rem 0;'>", unsafe_allow_html=True)
+
+st.markdown("""
+    <h3 style='text-align: center; color: white; margin-bottom: 0.5rem; margin-top: 0; font-size: 1rem;'>
+        RESULTADO DIÁRIO
+    </h3>
+""", unsafe_allow_html=True)
+
+# Calcular métricas diárias
+daily_metrics = calculate_daily_metrics(df_all)  # Usar df_all para capturar conversas reabertas
+
+# Layout com todos os KPIs lado a lado
+col1, col2, col3, col4, col5, col6 = st.columns(6)
+
+with col1:
+    st.metric(
+        label="Novos Leads",
+        value=format_number(daily_metrics['novos_leads']),
+        delta=f"{daily_metrics['novos_leads_perc']} vs ontem",
+        help="📈 Leads que fizeram o primeiro contato HOJE"
+    )
+
+with col2:
+    st.metric(
+        label="Visitas Dia",
+        value=format_number(daily_metrics['visitas_dia']),
+        help="🏋️ Visitas agendadas para HOJE"
+    )
+
+with col3:
+    st.metric(
+        label="Vendas Dia",
+        value=format_number(daily_metrics['vendas_dia']),
+        help="💰 Conversões identificadas HOJE (leads que viraram clientes)"
+    )
+
+with col4:
+    st.metric(
+        label="Total Conversas Dia",
+        value=format_number(daily_metrics['total_conversas_dia']),
+        delta=f"{daily_metrics['total_conversas_dia_perc']} vs ontem",
+        help="💬 Total de conversas ativas HOJE (novas + reabertas)"
+    )
+
+with col5:
+    st.metric(
+        label="Novas Conversas",
+        value=format_number(daily_metrics['conversas_dia']),
+        delta=f"{daily_metrics['conversas_dia_perc']} vs ontem",
+        help="🆕 Conversas iniciadas HOJE (primeiro contato)"
+    )
+
+with col6:
+    st.metric(
+        label="Conversas Reabertas",
+        value=format_number(daily_metrics['conversas_reabertas']),
+        delta=f"{daily_metrics['conversas_reabertas_perc']} vs ontem",
+        help="🔄 Leads que voltaram a conversar HOJE (já haviam conversado antes)"
+    )
+
+st.markdown("<hr style='margin-top: 0.8rem;'>", unsafe_allow_html=True)
+
+# ============================================================================
+# SEÇÃO 3: GRÁFICOS
+# ============================================================================
+
+col_graph1, col_graph2 = st.columns([1, 1])
+
+# GRÁFICO 1: Média Leads por Dia
+with col_graph1:
+    st.markdown("### 📊 MÉDIA LEADS POR DIA")
+    st.caption("Novos leads por dia nos últimos 30 dias. A linha tracejada mostra a média do período.")
+
+    leads_by_day = calculate_leads_by_day(df, days=30)
+
+    if not leads_by_day.empty:
+        # Formatar datas em português
+        leads_by_day['data_pt'] = leads_by_day['data'].apply(format_date_pt)
+
+        # Calcular média
+        media = leads_by_day['leads'].mean()
+
+        fig = go.Figure()
+
+        # Adicionar barras
+        fig.add_trace(go.Bar(
+            x=leads_by_day['data_pt'],
+            y=leads_by_day['leads'],
+            name='Leads',
+            marker=dict(color=THEME['primary']),
+            text=leads_by_day['leads'],
+            textposition='outside',
+            textfont=dict(color='white', size=12)
+        ))
+
+        # Adicionar linha de média
+        fig.add_trace(go.Scatter(
+            x=leads_by_day['data_pt'],
+            y=[media] * len(leads_by_day),
+            mode='lines',
+            name=f'Média: {media:.1f}',
+            line=dict(color=THEME['secondary'], width=2, dash='dash'),
+            showlegend=True
+        ))
+
+        fig.update_layout(
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='white'),
+            xaxis=dict(
+                showgrid=False,
+                title=None,
+                tickangle=-45
+            ),
+            yaxis=dict(
+                showgrid=False,
+                title=None
+            ),
+            margin=dict(l=20, r=20, t=20, b=60),
+            height=250,
+            legend=dict(
+                orientation="h",
+                yanchor="top",
+                y=1.1,
+                xanchor="center",
+                x=0.5,
+                font=dict(color='white')
+            )
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("Sem dados para exibir")
+
+# GRÁFICO 2: Distribuição por Período do Dia
+with col_graph2:
+    st.markdown("### 🕐 DISTRIBUIÇÃO POR PERÍODO DO DIA")
+    st.caption("Quando os leads mais conversam: Manhã (6h-12h), Tarde (12h-18h), Noite (18h-24h), Madrugada (0h-6h)")
+
+    distribution = calculate_distribution_by_period(df)
+
+    if not distribution.empty:
+        fig = go.Figure()
+
+        fig.add_trace(go.Bar(
+            x=distribution['periodo'],
+            y=distribution['quantidade'],
+            marker=dict(color=THEME['secondary']),
+            text=distribution['quantidade'],
+            textposition='outside',
+            textfont=dict(color='white')
+        ))
+
+        fig.update_layout(
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='white'),
+            xaxis=dict(
+                showgrid=False,
+                title=None
+            ),
+            yaxis=dict(
+                showgrid=True,
+                gridcolor='rgba(255,255,255,0.1)',
+                title=None
+            ),
+            margin=dict(l=20, r=20, t=20, b=20),
+            height=250
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("Sem dados para exibir")
+
+st.markdown("<hr>", unsafe_allow_html=True)
+
+# ============================================================================
+# SEÇÃO 4: CONVERSÕES REAIS (BOT → CRM)
+# ============================================================================
+
+if vendas_trafego > 0:
+    st.markdown("### 🎯 Conversões Reais: Leads do Bot que viraram Clientes")
+    st.caption("Rastreamento de conversões: cruzamento entre base do CRM e conversas do bot por telefone")
+
+    engine = get_engine()
+    df_conversoes = get_crm_conversions_detail(engine)
+
+    if not df_conversoes.empty:
+        taxa_conversao = (vendas_trafego / vendas_geral) * 100 if vendas_geral > 0 else 0
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Conversões Identificadas", vendas_trafego,
+                     help="🎯 Leads que conversaram com o bot e depois se matricularam")
+        with col2:
+            st.metric("Taxa de Conversão (Bot → CRM)", f"{taxa_conversao:.1f}%",
+                     help="📊 Percentual de clientes que vieram do bot (Vendas Tráfego / Vendas Geral)")
+        with col3:
+            st.metric("Total de Clientes CRM", vendas_geral,
+                     help="💼 Total de clientes cadastrados no CRM (todas as fontes)")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # Formatar datas
+        df_conversoes['Data Conversa'] = pd.to_datetime(df_conversoes['Data Conversa']).dt.strftime('%d/%m/%Y %H:%M')
+        df_conversoes['Data Cadastro CRM'] = pd.to_datetime(df_conversoes['Data Cadastro CRM']).dt.strftime('%d/%m/%Y %H:%M')
+
+        st.dataframe(
+            df_conversoes,
+            use_container_width=True,
+            hide_index=True,
+            height=300
+        )
+
+        st.info("💡 **Insight:** Estes leads conversaram com o bot ANTES de se cadastrarem no CRM. Tempo médio de conversão: 3-10 dias.")
+
+    st.markdown("<hr>", unsafe_allow_html=True)
+
+# ============================================================================
+# SEÇÃO 5: LEADS NÃO CONVERTIDOS COM ANÁLISE DE IA
+# ============================================================================
+
+st.markdown("### 🎯 Leads não convertidos com análise de IA")
+st.caption("Top 50 leads com maior probabilidade de conversão (score 1-5). Análise automática baseada em padrões de comportamento.")
+
+# Buscar leads com análise de IA
+engine = get_engine()
+df_ai_leads = get_leads_with_ai_analysis(engine, limit=50)
+
+if not df_ai_leads.empty:
+    st.info(f"📊 Total de leads analisados: **{len(df_ai_leads)}** (priorizados por probabilidade de conversão)")
+
+    # Formatar datas
+    df_ai_leads['Data Primeiro Contato'] = df_ai_leads['Data Primeiro Contato'].apply(
+        lambda x: format_datetime(x) if pd.notna(x) else "-"
+    )
+    df_ai_leads['Data Última Conversa'] = df_ai_leads['Data Última Conversa'].apply(
+        lambda x: format_datetime(x) if pd.notna(x) else "-"
+    )
+    df_ai_leads['Data Atualização Tel'] = df_ai_leads['Data Atualização Tel'].apply(
+        lambda x: format_datetime(x) if pd.notna(x) else "-"
+    )
+
+    # Formatar celular
+    df_ai_leads['Celular'] = df_ai_leads['Celular'].apply(format_phone)
+
+    # Formatar conversa compilada em formato legível de chat
+    df_ai_leads['Conversa Compilada'] = df_ai_leads.apply(
+        lambda row: format_conversation_readable(row['Conversa Compilada'], row['Nome']),
+        axis=1
+    )
+
+    # Adicionar emoji na probabilidade
+    def format_probabilidade(prob):
+        if prob >= 4:
+            return f"🔥 {prob}/5"
+        elif prob >= 3:
+            return f"⭐ {prob}/5"
+        elif prob >= 2:
+            return f"💡 {prob}/5"
+        else:
+            return f"📊 {prob}/5"
+
+    df_ai_leads['Probabilidade'] = df_ai_leads['Probabilidade'].apply(format_probabilidade)
+
+    # Exibir tabela
+    st.dataframe(
+        df_ai_leads,
+        use_container_width=True,
+        hide_index=True,
+        height=400,
+        column_config={
+            "Conversa Compilada": st.column_config.TextColumn(
+                "Conversa Compilada",
+                width="large",
+                help="Conversa completa formatada como chat"
+            ),
+            "Análise IA": st.column_config.TextColumn(
+                "Análise IA",
+                width="medium"
+            ),
+            "Sugestão de Disparo": st.column_config.TextColumn(
+                "Sugestão de Disparo",
+                width="large"
+            ),
+            "Probabilidade": st.column_config.TextColumn(
+                "Probabilidade",
+                width="small"
+            )
+        }
+    )
+else:
+    st.success("✅ Nenhum lead não convertido para analisar!")
+
+# ============================================================================
+# RODAPÉ
+# ============================================================================
+
+st.markdown("<hr>", unsafe_allow_html=True)
+
+col1, col2, col3 = st.columns([1, 2, 1])
+
+with col2:
+    st.markdown(f"""
+        <p style='text-align: center; color: {THEME["text_muted"]}; font-size: 0.85rem;'>
+            Dashboard atualizado em: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}<br>
+            Total de conversas no banco: {total_conversas:,}
+        </p>
+    """, unsafe_allow_html=True)
