@@ -149,7 +149,7 @@ perc_contatos = format_percentage(total_contatos, total_conversas)
 perc_ai = format_percentage(conversas_ai, total_conversas)
 perc_humano = format_percentage(conversas_humano, total_conversas)
 perc_visitas = format_percentage(visitas_agendadas, total_conversas)
-perc_trafego = format_percentage(vendas_trafego, total_conversas) if vendas_geral > 0 else "0%"
+perc_trafego = format_percentage(vendas_trafego, vendas_geral) if vendas_geral > 0 else "0%"
 perc_geral = "N/A"  # Vendas gerais não tem percentual em relação a conversas
 
 # Exibir cards
@@ -159,28 +159,32 @@ with col1:
     st.metric(
         label="Total Contatos",
         value=format_number(total_contatos),
-        delta=perc_contatos
+        delta=perc_contatos,
+        help="📊 Número de leads únicos que engajaram com o bot (enviaram pelo menos 1 mensagem)"
     )
 
 with col2:
     st.metric(
         label="Total conversas Agente AI",
         value=format_number(conversas_ai),
-        delta=perc_ai
+        delta=perc_ai,
+        help="🤖 Conversas gerenciadas 100% pelo bot, sem intervenção humana"
     )
 
 with col3:
     st.metric(
         label="Humano",
         value=format_number(conversas_humano),
-        delta=perc_humano
+        delta=perc_humano,
+        help="👤 Conversas que tiveram intervenção humana da equipe"
     )
 
 with col4:
     st.metric(
         label="Visitas agendadas",
         value=format_number(visitas_agendadas),
-        delta=perc_visitas
+        delta=perc_visitas,
+        help="📅 Leads que agendaram visita à academia (confirmados pelo bot)"
     )
 
 with col5:
@@ -188,7 +192,7 @@ with col5:
         label="Vendas/Tráfego",
         value=format_number(vendas_trafego),
         delta=perc_trafego,
-        help="✅ Leads do bot que viraram clientes no EVO CRM (conversões reais identificadas)"
+        help="🎯 Leads que conversaram com o bot ANTES de se matricularem no CRM (conversões reais rastreadas). Percentual = Vendas Tráfego / Vendas Geral."
     )
 
 with col6:
@@ -196,7 +200,7 @@ with col6:
         label="Vendas/Geral",
         value=format_number(vendas_geral),
         delta=perc_geral,
-        help="Total de clientes cadastrados no EVO CRM"
+        help="💼 Total de clientes cadastrados no CRM da academia (todas as fontes: bot, indicação, orgânico, etc)"
     )
 
 # ============================================================================
@@ -221,40 +225,46 @@ with col1:
     st.metric(
         label="Novos Leads",
         value=format_number(daily_metrics['novos_leads']),
-        delta=f"{daily_metrics['novos_leads_perc']} vs ontem"
+        delta=f"{daily_metrics['novos_leads_perc']} vs ontem",
+        help="📈 Leads que fizeram o primeiro contato HOJE"
     )
 
 with col2:
     st.metric(
         label="Visitas Dia",
-        value=format_number(daily_metrics['visitas_dia'])
+        value=format_number(daily_metrics['visitas_dia']),
+        help="🏋️ Visitas agendadas para HOJE"
     )
 
 with col3:
     st.metric(
         label="Vendas Dia",
-        value=format_number(daily_metrics['vendas_dia'])
+        value=format_number(daily_metrics['vendas_dia']),
+        help="💰 Conversões identificadas HOJE (leads que viraram clientes)"
     )
 
 with col4:
     st.metric(
         label="Total Conversas Dia",
         value=format_number(daily_metrics['total_conversas_dia']),
-        delta=f"{daily_metrics['total_conversas_dia_perc']} vs ontem"
+        delta=f"{daily_metrics['total_conversas_dia_perc']} vs ontem",
+        help="💬 Total de conversas ativas HOJE (novas + reabertas)"
     )
 
 with col5:
     st.metric(
         label="Novas Conversas",
         value=format_number(daily_metrics['conversas_dia']),
-        delta=f"{daily_metrics['conversas_dia_perc']} vs ontem"
+        delta=f"{daily_metrics['conversas_dia_perc']} vs ontem",
+        help="🆕 Conversas iniciadas HOJE (primeiro contato)"
     )
 
 with col6:
     st.metric(
         label="Conversas Reabertas",
         value=format_number(daily_metrics['conversas_reabertas']),
-        delta=f"{daily_metrics['conversas_reabertas_perc']} vs ontem"
+        delta=f"{daily_metrics['conversas_reabertas_perc']} vs ontem",
+        help="🔄 Leads que voltaram a conversar HOJE (já haviam conversado antes)"
     )
 
 st.markdown("<hr style='margin-top: 0.8rem;'>", unsafe_allow_html=True)
@@ -267,7 +277,8 @@ col_graph1, col_graph2 = st.columns([1, 1])
 
 # GRÁFICO 1: Média Leads por Dia
 with col_graph1:
-    st.markdown("### MÉDIA LEADS POR DIA")
+    st.markdown("### 📊 MÉDIA LEADS POR DIA")
+    st.caption("Novos leads por dia nos últimos 30 dias. A linha tracejada mostra a média do período.")
 
     leads_by_day = calculate_leads_by_day(df, days=30)
 
@@ -332,7 +343,8 @@ with col_graph1:
 
 # GRÁFICO 2: Distribuição por Período do Dia
 with col_graph2:
-    st.markdown("### Distribuição por Período do Dia")
+    st.markdown("### 🕐 DISTRIBUIÇÃO POR PERÍODO DO DIA")
+    st.caption("Quando os leads mais conversam: Manhã (6h-12h), Tarde (12h-18h), Noite (18h-24h), Madrugada (0h-6h)")
 
     distribution = calculate_distribution_by_period(df)
 
@@ -377,20 +389,24 @@ st.markdown("<hr>", unsafe_allow_html=True)
 
 if vendas_trafego > 0:
     st.markdown("### 🎯 Conversões Reais: Leads do Bot que viraram Clientes")
+    st.caption("Rastreamento de conversões: cruzamento entre base do CRM e conversas do bot por telefone")
 
     engine = get_engine()
     df_conversoes = get_crm_conversions_detail(engine)
 
     if not df_conversoes.empty:
-        taxa_conversao = (vendas_trafego / total_contatos) * 100 if total_contatos > 0 else 0
+        taxa_conversao = (vendas_trafego / vendas_geral) * 100 if vendas_geral > 0 else 0
 
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("Conversões Identificadas", vendas_trafego)
+            st.metric("Conversões Identificadas", vendas_trafego,
+                     help="🎯 Leads que conversaram com o bot e depois se matricularam")
         with col2:
-            st.metric("Taxa de Conversão", f"{taxa_conversao:.1f}%")
+            st.metric("Taxa de Conversão (Bot → CRM)", f"{taxa_conversao:.1f}%",
+                     help="📊 Percentual de clientes que vieram do bot (Vendas Tráfego / Vendas Geral)")
         with col3:
-            st.metric("Total de Clientes CRM", vendas_geral)
+            st.metric("Total de Clientes CRM", vendas_geral,
+                     help="💼 Total de clientes cadastrados no CRM (todas as fontes)")
 
         st.markdown("<br>", unsafe_allow_html=True)
 
@@ -414,6 +430,7 @@ if vendas_trafego > 0:
 # ============================================================================
 
 st.markdown("### 🎯 Leads não convertidos com análise de IA")
+st.caption("Top 50 leads com maior probabilidade de conversão (score 1-5). Análise automática baseada em padrões de comportamento.")
 
 # Buscar leads com análise de IA
 engine = get_engine()
