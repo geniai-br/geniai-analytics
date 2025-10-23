@@ -52,3 +52,17 @@ htmlcov/
 # Data
 data/
 *.csv
+
+# Excel base files
+base_evo.xlsx
+leads_contatos.xlsx
+
+# Logs
+logs/
+*.log
+
+# Relatórios gerados
+relatorio_conversoes_*.txt
+
+# Docs archive (planejamento histórico - mantido para referência)
+docs/archive/
