@@ -203,6 +203,28 @@ def run_etl_incremental(triggered_by='manual', force_full=False):
 
         log_execution_summary(logger, stats)
 
+        # 9. ANÁLISE GPT-4 (apenas se houver dados novos/atualizados)
+        if rows_inserted > 0 or rows_updated > 0:
+            logger.info("\n" + "=" * 80)
+            logger.info("FASE 4: ANÁLISE GPT-4")
+            logger.info("=" * 80)
+            logger.info("🤖 Iniciando análise de conversas novas/atualizadas com GPT-4...")
+
+            try:
+                from features.gpt4_analyzer import run_gpt4_analysis
+
+                gpt4_stats = run_gpt4_analysis(verbose=False)
+
+                logger.info(f"\n✅ Análise GPT-4 concluída:")
+                logger.info(f"   • Conversas encontradas: {gpt4_stats['total_found']}")
+                logger.info(f"   • Analisadas com sucesso: {gpt4_stats['analyzed']}")
+                logger.info(f"   • Falhas: {gpt4_stats['failed']}")
+                logger.info(f"   • Tempo: {gpt4_stats['execution_time']:.2f}s")
+
+            except Exception as e:
+                logger.warning(f"⚠️  Erro na análise GPT-4 (não crítico): {e}")
+                logger.warning("   O ETL foi concluído com sucesso, apenas a análise IA falhou")
+
         return True
 
     except Exception as e:
