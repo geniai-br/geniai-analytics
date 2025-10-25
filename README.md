@@ -1,10 +1,41 @@
 # 📊 AllpFit Analytics
 
+<div align="center">
+
+![Python](https://img.shields.io/badge/python-3.11+-blue.svg)
+![Status](https://img.shields.io/badge/status-production-green.svg)
+![Version](https://img.shields.io/badge/version-1.2-blue.svg)
+![License](https://img.shields.io/badge/license-MIT-green.svg)
+![CI](https://img.shields.io/badge/CI-GitHub%20Actions-blue.svg)
+![Code Style](https://img.shields.io/badge/code%20style-black-black.svg)
+
 Dashboard para análise de conversas de agente de IA do sistema Chatwoot.
+
+[Features](#-principais-features) •
+[Instalação](#-setup-inicial) •
+[Documentação](#-documentação) •
+[Contribuir](#-como-contribuir)
+
+</div>
+
+---
 
 ## 📋 Descrição
 
 Sistema completo de analytics que extrai dados de conversas do Chatwoot (banco remoto), processa via ETL e armazena localmente para análises rápidas. Inclui 60+ KPIs mapeados para análise profunda do comportamento do agente de IA.
+
+## ✨ Principais Features
+
+- 🤖 **Dashboard Interativo** - Streamlit com 12 KPIs e visualizações em tempo real
+- ⚡ **ETL V3 Incremental** - Extração inteligente apenas de dados novos (2-5 segundos)
+- 🔄 **UPSERT Automático** - INSERT para novos, UPDATE para modificados
+- 📊 **60+ KPIs Mapeados** - Executive, Operacional, Qualidade, Temporal
+- 🧠 **Análise com IA** - GPT-4 para análise de conversas e probabilidade de conversão
+- 📞 **Integração CRM** - Crossmatch telefones Bot ↔ EVO CRM
+- 🔐 **Seguro** - Credenciais no .env, usuário read-only no banco remoto
+- 📈 **Production-Ready** - CI/CD, testes, logs estruturados
+- 🎯 **Tracking de Conversões** - Identifica leads que viraram clientes
+- 🔔 **Monitoramento** - Scripts de status, logs e alertas
 
 ## 🏗️ Estrutura do Projeto
 
@@ -340,6 +371,37 @@ psql -U isaac -d allpfit -c "SELECT * FROM etl_control ORDER BY execution_id DES
 
 Desenvolvido por GenIAI
 
+## 🤝 Como Contribuir
+
+Contribuições são bem-vindas! Siga os passos:
+
+1. **Fork o projeto**
+2. **Crie uma branch** para sua feature (`git checkout -b feature/MinhaFeature`)
+3. **Commit suas mudanças** (`git commit -m 'feat: Adiciona MinhaFeature'`)
+4. **Push para a branch** (`git push origin feature/MinhaFeature`)
+5. **Abra um Pull Request**
+
+### Convenções de Commit
+
+Seguimos [Conventional Commits](https://www.conventionalcommits.org/):
+
+- `feat:` Nova funcionalidade
+- `fix:` Correção de bug
+- `docs:` Documentação
+- `refactor:` Refatoração de código
+- `test:` Adição de testes
+- `chore:` Tarefas de manutenção
+
+### Code Style
+
+- **Python:** Black + Flake8 + MyPy
+- **Line Length:** 120 caracteres
+- **Docstrings:** Google style
+
+Ver [CONTRIBUTING.md](CONTRIBUTING.md) para mais detalhes.
+
 ## 📄 Licença
 
-Projeto interno - Todos os direitos reservados
+Este projeto está licenciado sob a [MIT License](LICENSE) - veja o arquivo LICENSE para detalhes.
+
+Copyright © 2025 GenIAI

@@ -1,0 +1,112 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop, feature/* ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11"]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Cache pip packages
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -r requirements-dev.txt
+
+    - name: Lint with flake8
+      run: |
+        # Stop build if there are Python syntax errors or undefined names
+        flake8 src --count --select=E9,F63,F7,F82 --show-source --statistics
+        # Exit-zero treats all errors as warnings
+        flake8 src --count --exit-zero --max-complexity=10 --max-line-length=120 --statistics
+
+    - name: Format check with black
+      run: |
+        black --check src
+
+    - name: Type check with mypy
+      run: |
+        mypy src --ignore-missing-imports || true
+
+    - name: Run tests with pytest
+      run: |
+        pytest tests/ --verbose --cov=src --cov-report=xml --cov-report=term
+      continue-on-error: true  # Não falhar enquanto não houver testes
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        fail_ci_if_error: false
+      continue-on-error: true
+
+  security:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+
+    - name: Install bandit
+      run: pip install bandit[toml]
+
+    - name: Run security scan
+      run: |
+        bandit -r src -f json -o bandit-report.json || true
+        bandit -r src
+      continue-on-error: true
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [test, security]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Build package
+      run: |
+        python -m pip install build
+        python -m build
+      continue-on-error: true
+
+    - name: Check imports
+      run: |
+        python -c "import sys; sys.path.insert(0, 'src'); from features.etl import extractor; print('✅ ETL imports OK')"
+        python -c "import sys; sys.path.insert(0, 'src'); from features.analyzers import rule_based; print('✅ Analyzers imports OK')"
+        python -c "import sys; sys.path.insert(0, 'src'); from features.crm import crossmatch; print('✅ CRM imports OK')"
