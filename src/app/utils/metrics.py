@@ -107,8 +107,7 @@ def detect_visit_scheduled(message_compiled):
 
 def calculate_visits_scheduled(df):
     """
-    Total de visitas agendadas pelo bot (confirmadas)
-    Busca diretamente do banco para garantir precisão
+    Total de visitas agendadas (detectadas pelo GPT-4)
     """
     from .db_connector import get_engine
     from sqlalchemy import text
@@ -116,24 +115,11 @@ def calculate_visits_scheduled(df):
     try:
         engine = get_engine()
 
-        # Query para contar visitas confirmadas pelo bot
+        # Query para contar visitas agendadas detectadas pelo GPT-4
         query = text("""
-            WITH bot_confirmations AS (
-                SELECT DISTINCT ca.conversation_id
-                FROM conversas_analytics ca,
-                     jsonb_array_elements(ca.message_compiled) as msg
-                WHERE ca.contact_messages_count > 0
-                  AND ca.contact_name <> 'Isaac'
-                  AND (msg->>'sender' = 'AgentBot' OR msg->>'sender' IS NULL)
-                  AND (
-                      msg->>'text' ILIKE '%visita agendada%' OR
-                      msg->>'text' ILIKE '%agendamento confirmado%' OR
-                      msg->>'text' ILIKE '%já agendei%' OR
-                      msg->>'text' ILIKE '%te espero%'
-                  )
-            )
             SELECT COUNT(*) as total
-            FROM bot_confirmations
+            FROM conversas_analytics_ai
+            WHERE visita_agendada = TRUE
         """)
 
         with engine.connect() as conn:
@@ -142,11 +128,38 @@ def calculate_visits_scheduled(df):
             return row[0] if row else 0
 
     except Exception as e:
-        # Fallback para método antigo se houver erro
-        if 'message_compiled' not in df.columns:
-            return 0
-        df['has_visit'] = df['message_compiled'].apply(detect_visit_scheduled)
-        return df['has_visit'].sum()
+        print(f"Erro ao calcular visitas agendadas: {e}")
+        return 0
+
+
+def calculate_visits_scheduled_today():
+    """
+    Total de visitas agendadas HOJE (analisadas hoje pelo GPT-4)
+    """
+    from .db_connector import get_engine
+    from sqlalchemy import text
+    from datetime import datetime
+
+    try:
+        engine = get_engine()
+        today = datetime.now().date()
+
+        # Query para contar visitas agendadas que foram analisadas HOJE
+        query = text(f"""
+            SELECT COUNT(*) as total
+            FROM conversas_analytics_ai
+            WHERE visita_agendada = TRUE
+              AND DATE(analisado_em) = '{today}'
+        """)
+
+        with engine.connect() as conn:
+            result = conn.execute(query)
+            row = result.fetchone()
+            return row[0] if row else 0
+
+    except Exception as e:
+        print(f"Erro ao calcular visitas do dia: {e}")
+        return 0
 
 
 def calculate_daily_metrics(df):
@@ -196,7 +209,7 @@ def calculate_daily_metrics(df):
         'conversas_dia_perc': perc_conversas_dia,
         'conversas_reabertas': conversas_reabertas_hoje,
         'conversas_reabertas_perc': perc_reabertas,
-        'visitas_dia': calculate_visits_scheduled(df_today),
+        'visitas_dia': calculate_visits_scheduled_today(),  # CORRIGIDO: visitas agendadas HOJE
         'vendas_dia': 0  # TODO: Integrar com CRM
     }
 
@@ -356,22 +369,132 @@ def calculate_conversion_rate(total_leads, total_sales):
     return (total_sales / total_leads) * 100
 
 
-def get_leads_with_ai_analysis(engine, limit=50):
+def build_filter_conditions(filters: dict) -> str:
     """
-    Busca leads não convertidos com análise de IA
+    Constrói condições WHERE para filtros
+
+    Args:
+        filters: Dicionário com os filtros ativos
+
+    Returns:
+        String com condições WHERE
+    """
+    conditions = []
+
+    # Filtro de nome
+    if filters.get('nome'):
+        conditions.append(f"contact_name ILIKE '%{filters['nome']}%'")
+
+    # Filtro de celular
+    if filters.get('celular'):
+        conditions.append(f"contact_phone ILIKE '%{filters['celular']}%'")
+
+    # Filtro de condição física
+    if filters.get('condicao_fisica') and len(filters['condicao_fisica']) > 0:
+        condicoes = "', '".join(filters['condicao_fisica'])
+        conditions.append(f"condicao_fisica IN ('{condicoes}')")
+
+    # Filtro de objetivo
+    if filters.get('objetivo') and len(filters['objetivo']) > 0:
+        objetivos = "', '".join(filters['objetivo'])
+        conditions.append(f"objetivo IN ('{objetivos}')")
+
+    # Filtro de probabilidade
+    if filters.get('probabilidade') and len(filters['probabilidade']) > 0:
+        prob_values = []
+        has_sem_analise = False
+
+        for p in filters['probabilidade']:
+            if p == 'Sem análise':
+                has_sem_analise = True
+            elif p in ['0', '1', '2', '3', '4', '5']:
+                prob_values.append(p)
+
+        if has_sem_analise and prob_values:
+            # Incluir NULL e valores selecionados
+            conditions.append(f"(probabilidade_conversao IN ({','.join(prob_values)}) OR probabilidade_conversao IS NULL)")
+        elif has_sem_analise:
+            # Apenas NULL
+            conditions.append("probabilidade_conversao IS NULL")
+        else:
+            # Apenas valores selecionados
+            conditions.append(f"probabilidade_conversao IN ({','.join(prob_values)})")
+
+    # Filtro de status análise
+    if filters.get('status_analise') == 'Com análise':
+        conditions.append("probabilidade_conversao IS NOT NULL")
+    elif filters.get('status_analise') == 'Sem análise':
+        conditions.append("probabilidade_conversao IS NULL")
+
+    # Filtro de data primeiro contato
+    if filters.get('data_primeiro_inicio'):
+        conditions.append(f"data_primeiro_contato >= '{filters['data_primeiro_inicio']}'")
+    if filters.get('data_primeiro_fim'):
+        conditions.append(f"data_primeiro_contato <= '{filters['data_primeiro_fim']} 23:59:59'")
+
+    # Filtro de data última conversa
+    if filters.get('data_ultima_inicio'):
+        conditions.append(f"data_ultima_conversa >= '{filters['data_ultima_inicio']}'")
+    if filters.get('data_ultima_fim'):
+        conditions.append(f"data_ultima_conversa <= '{filters['data_ultima_fim']} 23:59:59'")
+
+    return " AND ".join(conditions) if conditions else "1=1"
+
+
+def get_total_leads_with_ai_analysis(engine, filters: dict = None):
+    """
+    Conta total de leads não convertidos (com e sem análise de IA)
 
     Args:
         engine: SQLAlchemy engine
-        limit: Limite de registros
+        filters: Dicionário com filtros ativos
 
     Returns:
-        DataFrame com leads analisados
+        int: Total de leads
     """
     from sqlalchemy import text
+
+    where_clause = build_filter_conditions(filters) if filters else "1=1"
+
+    query = text(f"""
+        SELECT COUNT(*) as total
+        FROM vw_leads_nao_convertidos_com_ia
+        WHERE {where_clause}
+    """)
+
+    try:
+        with engine.connect() as conn:
+            result = conn.execute(query)
+            row = result.fetchone()
+            return row[0] if row else 0
+    except Exception as e:
+        return 0
+
+
+def get_leads_with_ai_analysis(engine, limit=50, offset=0, filters: dict = None):
+    """
+    Busca leads não convertidos (com e sem análise de IA)
+
+    Args:
+        engine: SQLAlchemy engine
+        limit: Limite de registros por página
+        offset: Número de registros a pular (para paginação)
+        filters: Dicionário com filtros ativos
+
+    Returns:
+        DataFrame com leads (campos vazios para os sem análise)
+    """
+    from sqlalchemy import text
+
+    where_clause = build_filter_conditions(filters) if filters else "1=1"
+
+    # Se limit for None, retorna todos os registros (para download)
+    limit_clause = f"LIMIT {limit} OFFSET {offset}" if limit is not None else ""
 
     query = text(f"""
         SELECT
             contact_name AS nome,
+            nome_mapeado_bot,
             contact_phone AS celular,
             condicao_fisica,
             objetivo,
@@ -383,9 +506,14 @@ def get_leads_with_ai_analysis(engine, limit=50):
             sugestao_disparo,
             probabilidade_conversao
         FROM vw_leads_nao_convertidos_com_ia
-        WHERE probabilidade_conversao IS NOT NULL
-        ORDER BY probabilidade_conversao DESC, data_ultima_conversa DESC
-        LIMIT {limit}
+        WHERE {where_clause}
+        ORDER BY
+            CASE
+                WHEN probabilidade_conversao IS NOT NULL THEN probabilidade_conversao
+                ELSE 0
+            END DESC,
+            data_ultima_conversa DESC
+        {limit_clause}
     """)
 
     with engine.connect() as conn:
@@ -398,6 +526,7 @@ def get_leads_with_ai_analysis(engine, limit=50):
         # Convert to DataFrame
         df = pd.DataFrame(rows, columns=[
             'Nome',
+            'Nome Mapeado Bot',
             'Celular',
             'Condição Física',
             'Objetivo',

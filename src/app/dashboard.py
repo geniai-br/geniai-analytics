@@ -27,6 +27,8 @@ from utils.metrics import (
     get_leads_table_data,
     get_leads_not_converted,
     get_leads_with_ai_analysis,
+    get_total_leads_with_ai_analysis,
+    build_filter_conditions,
     calculate_crm_conversions,
     calculate_days_running,
     get_crm_conversions_detail
@@ -47,6 +49,30 @@ if 'date_start' not in st.session_state:
     st.session_state.date_start = None
 if 'date_end' not in st.session_state:
     st.session_state.date_end = None
+if 'leads_page' not in st.session_state:
+    st.session_state.leads_page = 1
+
+# Inicializar filtros de leads
+if 'filter_nome' not in st.session_state:
+    st.session_state.filter_nome = ""
+if 'filter_celular' not in st.session_state:
+    st.session_state.filter_celular = ""
+if 'filter_condicao_fisica' not in st.session_state:
+    st.session_state.filter_condicao_fisica = []
+if 'filter_objetivo' not in st.session_state:
+    st.session_state.filter_objetivo = []
+if 'filter_data_primeiro_inicio' not in st.session_state:
+    st.session_state.filter_data_primeiro_inicio = None
+if 'filter_data_primeiro_fim' not in st.session_state:
+    st.session_state.filter_data_primeiro_fim = None
+if 'filter_data_ultima_inicio' not in st.session_state:
+    st.session_state.filter_data_ultima_inicio = None
+if 'filter_data_ultima_fim' not in st.session_state:
+    st.session_state.filter_data_ultima_fim = None
+if 'filter_probabilidade' not in st.session_state:
+    st.session_state.filter_probabilidade = []
+if 'filter_status_analise' not in st.session_state:
+    st.session_state.filter_status_analise = "Todos"
 
 # Header com título e filtros no canto direito
 col_title, col_spacer, col_date_start, col_date_end, col_refresh = st.columns([5, 1.5, 1, 1, 0.5])
@@ -426,78 +452,334 @@ if vendas_trafego > 0:
     st.markdown("<hr>", unsafe_allow_html=True)
 
 # ============================================================================
-# SEÇÃO 5: LEADS NÃO CONVERTIDOS COM ANÁLISE DE IA
+# SEÇÃO 5: ANÁLISE GENIAI
 # ============================================================================
 
-st.markdown("### 🎯 Leads não convertidos com análise de IA")
-st.caption("Top 50 leads com maior probabilidade de conversão (score 1-5). Análise automática baseada em padrões de comportamento.")
+st.markdown("### 🎯 Análise GeniAI")
+st.caption("Use os filtros nas colunas abaixo para refinar a visualização. O download reflete exatamente o que está visível.")
 
-# Buscar leads com análise de IA
+# ============================================================================
+# FILTROS SIMPLIFICADOS (ACIMA DA TABELA)
+# ============================================================================
+
+st.markdown("#### 🔍 Filtros Rápidos")
+
+with st.container():
+    col_f1, col_f2, col_f3, col_f4, col_f5, col_f6 = st.columns(6)
+
+    with col_f1:
+        filter_nome_input = st.text_input("🔍 Nome", value=st.session_state.filter_nome, placeholder="Digite...")
+        if filter_nome_input != st.session_state.filter_nome:
+            st.session_state.filter_nome = filter_nome_input
+            st.session_state.leads_page = 1
+
+    with col_f2:
+        filter_prob_input = st.multiselect(
+            "🎯 Probabilidade",
+            options=["0", "1", "2", "3", "4", "5", "Sem análise"],
+            default=st.session_state.filter_probabilidade if isinstance(st.session_state.filter_probabilidade, list) else []
+        )
+        if filter_prob_input != st.session_state.filter_probabilidade:
+            st.session_state.filter_probabilidade = filter_prob_input
+            st.session_state.leads_page = 1
+
+    with col_f3:
+        filter_condicao_input = st.multiselect(
+            "🏋️ Condição",
+            options=["Sedentário", "Iniciante", "Intermediário", "Avançado", "Não mencionado"],
+            default=st.session_state.filter_condicao_fisica if isinstance(st.session_state.filter_condicao_fisica, list) else []
+        )
+        if filter_condicao_input != st.session_state.filter_condicao_fisica:
+            st.session_state.filter_condicao_fisica = filter_condicao_input
+            st.session_state.leads_page = 1
+
+    with col_f4:
+        filter_objetivo_input = st.multiselect(
+            "🎯 Objetivo",
+            options=["Perda de peso", "Ganho de massa muscular", "Condicionamento físico", "Saúde geral", "Estética/Definição", "Não mencionado"],
+            default=st.session_state.filter_objetivo if isinstance(st.session_state.filter_objetivo, list) else []
+        )
+        if filter_objetivo_input != st.session_state.filter_objetivo:
+            st.session_state.filter_objetivo = filter_objetivo_input
+            st.session_state.leads_page = 1
+
+    with col_f5:
+        filter_data_input = st.selectbox(
+            "📅 Período",
+            options=["Todos", "Hoje", "Últimos 7 dias", "Últimos 30 dias", "Personalizado"],
+            index=0
+        )
+
+        if filter_data_input == "Personalizado":
+            col_d1, col_d2 = st.columns(2)
+            with col_d1:
+                data_inicio = st.date_input("De:", value=st.session_state.filter_data_ultima_inicio)
+                st.session_state.filter_data_ultima_inicio = data_inicio
+            with col_d2:
+                data_fim = st.date_input("Até:", value=st.session_state.filter_data_ultima_fim)
+                st.session_state.filter_data_ultima_fim = data_fim
+        elif filter_data_input == "Hoje":
+            from datetime import date
+            st.session_state.filter_data_ultima_inicio = date.today()
+            st.session_state.filter_data_ultima_fim = date.today()
+        elif filter_data_input == "Últimos 7 dias":
+            from datetime import date, timedelta
+            st.session_state.filter_data_ultima_inicio = date.today() - timedelta(days=7)
+            st.session_state.filter_data_ultima_fim = date.today()
+        elif filter_data_input == "Últimos 30 dias":
+            from datetime import date, timedelta
+            st.session_state.filter_data_ultima_inicio = date.today() - timedelta(days=30)
+            st.session_state.filter_data_ultima_fim = date.today()
+        else:  # "Todos"
+            st.session_state.filter_data_ultima_inicio = None
+            st.session_state.filter_data_ultima_fim = None
+
+    with col_f6:
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("🗑️ Limpar", use_container_width=True):
+            st.session_state.filter_nome = ""
+            st.session_state.filter_celular = ""
+            st.session_state.filter_condicao_fisica = []
+            st.session_state.filter_objetivo = []
+            st.session_state.filter_data_primeiro_inicio = None
+            st.session_state.filter_data_primeiro_fim = None
+            st.session_state.filter_data_ultima_inicio = None
+            st.session_state.filter_data_ultima_fim = None
+            st.session_state.filter_probabilidade = []
+            st.session_state.filter_status_analise = "Todos"
+            st.session_state.leads_page = 1
+            st.rerun()
+
+st.markdown("<hr style='margin: 0.5rem 0;'>", unsafe_allow_html=True)
+
+# ============================================================================
+# BUSCAR DADOS COM FILTROS
+# ============================================================================
+
+# Preparar filtros
+active_filters = {
+    'nome': st.session_state.filter_nome,
+    'celular': st.session_state.filter_celular,
+    'condicao_fisica': st.session_state.filter_condicao_fisica,
+    'objetivo': st.session_state.filter_objetivo,
+    'data_primeiro_inicio': st.session_state.filter_data_primeiro_inicio,
+    'data_primeiro_fim': st.session_state.filter_data_primeiro_fim,
+    'data_ultima_inicio': st.session_state.filter_data_ultima_inicio,
+    'data_ultima_fim': st.session_state.filter_data_ultima_fim,
+    'probabilidade': st.session_state.filter_probabilidade,
+    'status_analise': st.session_state.filter_status_analise
+}
+
+# Buscar total de leads e implementar paginação
 engine = get_engine()
-df_ai_leads = get_leads_with_ai_analysis(engine, limit=50)
+total_leads = get_total_leads_with_ai_analysis(engine, filters=active_filters)
 
-if not df_ai_leads.empty:
-    st.info(f"📊 Total de leads analisados: **{len(df_ai_leads)}** (priorizados por probabilidade de conversão)")
+if total_leads > 0:
+    # Configurações de paginação
+    LEADS_PER_PAGE = 50
+    total_pages = (total_leads + LEADS_PER_PAGE - 1) // LEADS_PER_PAGE  # Arredonda para cima
 
-    # Formatar datas
-    df_ai_leads['Data Primeiro Contato'] = df_ai_leads['Data Primeiro Contato'].apply(
-        lambda x: format_datetime(x) if pd.notna(x) else "-"
-    )
-    df_ai_leads['Data Última Conversa'] = df_ai_leads['Data Última Conversa'].apply(
-        lambda x: format_datetime(x) if pd.notna(x) else "-"
-    )
-    df_ai_leads['Data Atualização Tel'] = df_ai_leads['Data Atualização Tel'].apply(
-        lambda x: format_datetime(x) if pd.notna(x) else "-"
-    )
+    # Garantir que a página atual está dentro dos limites
+    if st.session_state.leads_page > total_pages:
+        st.session_state.leads_page = total_pages
+    if st.session_state.leads_page < 1:
+        st.session_state.leads_page = 1
 
-    # Formatar celular
-    df_ai_leads['Celular'] = df_ai_leads['Celular'].apply(format_phone)
+    # Calcular offset
+    offset = (st.session_state.leads_page - 1) * LEADS_PER_PAGE
 
-    # Formatar conversa compilada em formato legível de chat
-    df_ai_leads['Conversa Compilada'] = df_ai_leads.apply(
-        lambda row: format_conversation_readable(row['Conversa Compilada'], row['Nome']),
-        axis=1
-    )
+    # Buscar dados da página atual
+    df_ai_leads = get_leads_with_ai_analysis(engine, limit=LEADS_PER_PAGE, offset=offset, filters=active_filters)
 
-    # Adicionar emoji na probabilidade
-    def format_probabilidade(prob):
-        if prob >= 4:
-            return f"🔥 {prob}/5"
-        elif prob >= 3:
-            return f"⭐ {prob}/5"
-        elif prob >= 2:
-            return f"💡 {prob}/5"
-        else:
-            return f"📊 {prob}/5"
+    # Header com informações e controles de paginação + Download
+    col_info, col_download, col_nav = st.columns([2, 0.7, 1.3])
 
-    df_ai_leads['Probabilidade'] = df_ai_leads['Probabilidade'].apply(format_probabilidade)
+    with col_info:
+        start_record = offset + 1
+        end_record = min(offset + LEADS_PER_PAGE, total_leads)
+        st.info(f"📊 Mostrando **{start_record}-{end_record}** de **{total_leads}** leads | Página **{st.session_state.leads_page}** de **{total_pages}**")
 
-    # Exibir tabela
-    st.dataframe(
-        df_ai_leads,
-        use_container_width=True,
-        hide_index=True,
-        height=400,
-        column_config={
-            "Conversa Compilada": st.column_config.TextColumn(
-                "Conversa Compilada",
-                width="large",
-                help="Conversa completa formatada como chat"
-            ),
-            "Análise IA": st.column_config.TextColumn(
-                "Análise IA",
-                width="medium"
-            ),
-            "Sugestão de Disparo": st.column_config.TextColumn(
-                "Sugestão de Disparo",
-                width="large"
-            ),
-            "Probabilidade": st.column_config.TextColumn(
-                "Probabilidade",
-                width="small"
+    with col_download:
+        st.markdown("<br>", unsafe_allow_html=True)
+        # Buscar TODOS os dados filtrados para download
+        df_download = get_leads_with_ai_analysis(engine, limit=None, offset=0, filters=active_filters)
+
+        if not df_download.empty:
+            # Preparar dados para download - FORMATO EXATAMENTE IGUAL AO VISÍVEL
+            df_export = df_download.copy()
+
+            # Formatar datas (mesma função usada na visualização)
+            df_export['Data Primeiro Contato'] = df_export['Data Primeiro Contato'].apply(
+                lambda x: format_datetime(x) if pd.notna(x) else "-"
             )
-        }
-    )
+            df_export['Data Última Conversa'] = df_export['Data Última Conversa'].apply(
+                lambda x: format_datetime(x) if pd.notna(x) else "-"
+            )
+            df_export['Data Atualização Tel'] = df_export['Data Atualização Tel'].apply(
+                lambda x: format_datetime(x) if pd.notna(x) else "-"
+            )
+
+            # Formatar celular (mesma função usada na visualização)
+            df_export['Celular'] = df_export['Celular'].apply(format_phone)
+
+            # Formatar conversa compilada (mesma função usada na visualização)
+            df_export['Conversa Compilada'] = df_export.apply(
+                lambda row: format_conversation_readable(row['Conversa Compilada'], row['Nome']),
+                axis=1
+            )
+
+            # Formatar probabilidade (mesma função usada na visualização)
+            def format_probabilidade_export(prob):
+                if pd.isna(prob) or prob is None:
+                    return "⏳ Aguardando análise"
+                if prob >= 4:
+                    return f"🔥 {prob}/5"
+                elif prob >= 3:
+                    return f"⭐ {prob}/5"
+                elif prob >= 2:
+                    return f"💡 {prob}/5"
+                else:
+                    return f"📊 {prob}/5"
+
+            df_export['Probabilidade'] = df_export['Probabilidade'].apply(format_probabilidade_export)
+
+            # Tratar campos vazios (mesma forma da visualização)
+            df_export['Nome Mapeado Bot'] = df_export['Nome Mapeado Bot'].fillna("-").replace('', '-')
+            df_export['Análise IA'] = df_export['Análise IA'].fillna("-")
+            df_export['Sugestão de Disparo'] = df_export['Sugestão de Disparo'].fillna("-")
+            df_export['Condição Física'] = df_export['Condição Física'].fillna("-")
+            df_export['Objetivo'] = df_export['Objetivo'].fillna("-")
+
+            # Garantir ordem EXATA das colunas (mesma ordem da tabela visível)
+            colunas_ordenadas = [
+                'Nome',
+                'Nome Mapeado Bot',
+                'Celular',
+                'Condição Física',
+                'Objetivo',
+                'Data Primeiro Contato',
+                'Data Última Conversa',
+                'Conversa Compilada',
+                'Análise IA',
+                'Data Atualização Tel',
+                'Sugestão de Disparo',
+                'Probabilidade'
+            ]
+
+            df_export = df_export[colunas_ordenadas]
+
+            # Converter para CSV no formato Excel Brasil (ponto e vírgula como separador)
+            csv = df_export.to_csv(
+                index=False,           # Sem índice
+                sep=';',               # Separador padrão Brasil/Excel
+                encoding='utf-8-sig',  # UTF-8 com BOM para Excel
+                lineterminator='\n'    # Quebra de linha padrão
+            ).encode('utf-8-sig')
+
+            st.download_button(
+                label="📥 Baixar CSV",
+                data=csv,
+                file_name=f"leads_allpfit_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                use_container_width=True,
+                help=f"Baixar {len(df_export)} leads filtrados (formato idêntico à tabela)"
+            )
+
+    with col_nav:
+        col_prev, col_page, col_next = st.columns([1, 2, 1])
+
+        with col_prev:
+            if st.button("◀️ Anterior", disabled=(st.session_state.leads_page == 1), key="prev_page"):
+                st.session_state.leads_page -= 1
+                st.rerun()
+
+        with col_page:
+            new_page = st.number_input(
+                "Ir para página:",
+                min_value=1,
+                max_value=total_pages,
+                value=st.session_state.leads_page,
+                step=1,
+                key="page_input",
+                label_visibility="collapsed"
+            )
+            if new_page != st.session_state.leads_page:
+                st.session_state.leads_page = new_page
+                st.rerun()
+
+        with col_next:
+            if st.button("Próximo ▶️", disabled=(st.session_state.leads_page == total_pages), key="next_page"):
+                st.session_state.leads_page += 1
+                st.rerun()
+
+    if not df_ai_leads.empty:
+        # Formatar datas
+        df_ai_leads['Data Primeiro Contato'] = df_ai_leads['Data Primeiro Contato'].apply(
+            lambda x: format_datetime(x) if pd.notna(x) else "-"
+        )
+        df_ai_leads['Data Última Conversa'] = df_ai_leads['Data Última Conversa'].apply(
+            lambda x: format_datetime(x) if pd.notna(x) else "-"
+        )
+        df_ai_leads['Data Atualização Tel'] = df_ai_leads['Data Atualização Tel'].apply(
+            lambda x: format_datetime(x) if pd.notna(x) else "-"
+        )
+
+        # Formatar celular
+        df_ai_leads['Celular'] = df_ai_leads['Celular'].apply(format_phone)
+
+        # Formatar conversa compilada em formato legível de chat
+        df_ai_leads['Conversa Compilada'] = df_ai_leads.apply(
+            lambda row: format_conversation_readable(row['Conversa Compilada'], row['Nome']),
+            axis=1
+        )
+
+        # Adicionar emoji na probabilidade (tratar nulos)
+        def format_probabilidade(prob):
+            if pd.isna(prob) or prob is None:
+                return "⏳ Aguardando análise"
+            if prob >= 4:
+                return f"🔥 {prob}/5"
+            elif prob >= 3:
+                return f"⭐ {prob}/5"
+            elif prob >= 2:
+                return f"💡 {prob}/5"
+            else:
+                return f"📊 {prob}/5"
+
+        df_ai_leads['Probabilidade'] = df_ai_leads['Probabilidade'].apply(format_probabilidade)
+
+        # Tratar campos vazios de análise
+        df_ai_leads['Análise IA'] = df_ai_leads['Análise IA'].fillna("-")
+        df_ai_leads['Sugestão de Disparo'] = df_ai_leads['Sugestão de Disparo'].fillna("-")
+        df_ai_leads['Condição Física'] = df_ai_leads['Condição Física'].fillna("-")
+        df_ai_leads['Objetivo'] = df_ai_leads['Objetivo'].fillna("-")
+
+        # Exibir tabela
+        st.dataframe(
+            df_ai_leads,
+            use_container_width=True,
+            hide_index=True,
+            height=400,
+            column_config={
+                "Conversa Compilada": st.column_config.TextColumn(
+                    "Conversa Compilada",
+                    width="large",
+                    help="Conversa completa formatada como chat"
+                ),
+                "Análise IA": st.column_config.TextColumn(
+                    "Análise IA",
+                    width="medium"
+                ),
+                "Sugestão de Disparo": st.column_config.TextColumn(
+                    "Sugestão de Disparo",
+                    width="large"
+                ),
+                "Probabilidade": st.column_config.TextColumn(
+                    "Probabilidade",
+                    width="small"
+                )
+            }
+        )
 else:
     st.success("✅ Nenhum lead não convertido para analisar!")
 
