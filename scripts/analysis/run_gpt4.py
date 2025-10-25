@@ -3,19 +3,21 @@
 Script para rodar análise GPT-4 manualmente
 
 Uso:
-    python run_gpt4_analysis.py              # Analisar todas as conversas pendentes
-    python run_gpt4_analysis.py --limit 10   # Analisar apenas 10 conversas
-    python run_gpt4_analysis.py --help       # Mostrar ajuda
+    python scripts/analysis/run_gpt4.py              # Analisar todas as conversas pendentes
+    python scripts/analysis/run_gpt4.py --limit 10   # Analisar apenas 10 conversas
+    python scripts/analysis/run_gpt4.py --help       # Mostrar ajuda
 """
 
 import argparse
 import sys
 import os
+from pathlib import Path
 
 # Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root / 'src'))
 
-from features.gpt4_analyzer import run_gpt4_analysis
+from features.analyzers.gpt4 import run_gpt4_analysis
 
 
 def main():

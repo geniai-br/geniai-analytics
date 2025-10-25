@@ -4,18 +4,19 @@ Cruza base Excel do EVO CRM com conversas do bot
 Identifica conversões reais (leads que falaram com bot ANTES de entrar no CRM)
 """
 
+import sys
+import os
+from pathlib import Path
 import pandas as pd
 import psycopg2
 from datetime import datetime
 import re
 
-DB_CONFIG = {
-    'host': 'localhost',
-    'port': 5432,
-    'database': 'allpfit',
-    'user': 'isaac',
-    'password': 'AllpFit2024@Analytics'
-}
+# Add src to path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+from shared.config import Config
+
 
 def normalizar_telefone(telefone_original):
     """
@@ -58,6 +59,7 @@ def normalizar_telefone(telefone_original):
 
     return versoes
 
+
 def formatar_data(data):
     """Formata data para string dd/mm/yyyy"""
     if pd.isna(data):
@@ -70,14 +72,42 @@ def formatar_data(data):
     # Se é string, retorna como está
     return str(data)
 
-def main():
+
+def get_db_connection():
+    """Cria conexão com banco local usando config centralizado"""
+    Config.validate_local_db()
+
+    conn_params = {
+        'host': Config.LOCAL_DB_HOST,
+        'port': Config.LOCAL_DB_PORT,
+        'database': Config.LOCAL_DB_NAME,
+        'user': Config.LOCAL_DB_USER,
+    }
+
+    if Config.LOCAL_DB_PASSWORD:
+        conn_params['password'] = Config.LOCAL_DB_PASSWORD
+
+    return psycopg2.connect(**conn_params)
+
+
+def main(excel_path=None):
     print("="*80)
     print("🔗 CRUZANDO BASE EXCEL EVO COM CONVERSAS DO BOT")
     print("="*80)
 
     # 1. Carregar Excel
     print("\n📊 Carregando base_evo.xlsx...")
-    excel_path = '/home/isaac/projects/allpfit-analytics/base_evo.xlsx'
+    if not excel_path:
+        # Busca na pasta data/input primeiro, depois na raiz
+        excel_path = os.path.join(Config.DATA_DIR, 'input', 'base_evo.xlsx')
+        if not os.path.exists(excel_path):
+            excel_path = 'base_evo.xlsx'
+
+    if not os.path.exists(excel_path):
+        print(f"❌ Arquivo não encontrado: {excel_path}")
+        print(f"   Por favor, coloque o arquivo base_evo.xlsx em data/input/")
+        return
+
     df_evo = pd.read_excel(excel_path)
 
     print(f"✅ {len(df_evo)} clientes carregados do Excel")
@@ -98,7 +128,7 @@ def main():
 
     # 3. Buscar conversas do bot
     print("\n🤖 Buscando conversas do bot...")
-    conn = psycopg2.connect(**DB_CONFIG)
+    conn = get_db_connection()
     cur = conn.cursor()
 
     cur.execute("""
@@ -273,8 +303,11 @@ def main():
     print(f"✅ {len(conversoes_reais)} conversões reais salvas na tabela conversas_crm_match_real!")
 
     # 6. Salvar relatório
+    reports_dir = os.path.join(Config.DATA_DIR, 'reports')
+    os.makedirs(reports_dir, exist_ok=True)
+
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    report_file = f"relatorio_conversoes_excel_{timestamp}.txt"
+    report_file = os.path.join(reports_dir, f"conversoes_excel_{timestamp}.txt")
 
     with open(report_file, 'w', encoding='utf-8') as f:
         f.write("RELATÓRIO DE CONVERSÕES: EXCEL EVO → BOT\n")
@@ -303,6 +336,7 @@ def main():
     print("\n✅ Processo concluído!")
     print(f"\n🎯 CONVERSÕES REAIS: {len(conversoes_reais)} leads do bot viraram clientes do CRM")
     print(f"📈 TAXA: {taxa_real:.1f}%")
+
 
 if __name__ == '__main__':
     main()

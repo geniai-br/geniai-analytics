@@ -107,8 +107,7 @@ def detect_visit_scheduled(message_compiled):
 
 def calculate_visits_scheduled(df):
     """
-    Total de visitas agendadas pelo bot (confirmadas)
-    Busca diretamente do banco para garantir precisão
+    Total de visitas agendadas (detectadas pelo GPT-4)
     """
     from .db_connector import get_engine
     from sqlalchemy import text
@@ -116,24 +115,11 @@ def calculate_visits_scheduled(df):
     try:
         engine = get_engine()
 
-        # Query para contar visitas confirmadas pelo bot
+        # Query para contar visitas agendadas detectadas pelo GPT-4
         query = text("""
-            WITH bot_confirmations AS (
-                SELECT DISTINCT ca.conversation_id
-                FROM conversas_analytics ca,
-                     jsonb_array_elements(ca.message_compiled) as msg
-                WHERE ca.contact_messages_count > 0
-                  AND ca.contact_name <> 'Isaac'
-                  AND (msg->>'sender' = 'AgentBot' OR msg->>'sender' IS NULL)
-                  AND (
-                      msg->>'text' ILIKE '%visita agendada%' OR
-                      msg->>'text' ILIKE '%agendamento confirmado%' OR
-                      msg->>'text' ILIKE '%já agendei%' OR
-                      msg->>'text' ILIKE '%te espero%'
-                  )
-            )
             SELECT COUNT(*) as total
-            FROM bot_confirmations
+            FROM conversas_analytics_ai
+            WHERE visita_agendada = TRUE
         """)
 
         with engine.connect() as conn:
@@ -142,11 +128,38 @@ def calculate_visits_scheduled(df):
             return row[0] if row else 0
 
     except Exception as e:
-        # Fallback para método antigo se houver erro
-        if 'message_compiled' not in df.columns:
-            return 0
-        df['has_visit'] = df['message_compiled'].apply(detect_visit_scheduled)
-        return df['has_visit'].sum()
+        print(f"Erro ao calcular visitas agendadas: {e}")
+        return 0
+
+
+def calculate_visits_scheduled_today():
+    """
+    Total de visitas agendadas HOJE (analisadas hoje pelo GPT-4)
+    """
+    from .db_connector import get_engine
+    from sqlalchemy import text
+    from datetime import datetime
+
+    try:
+        engine = get_engine()
+        today = datetime.now().date()
+
+        # Query para contar visitas agendadas que foram analisadas HOJE
+        query = text(f"""
+            SELECT COUNT(*) as total
+            FROM conversas_analytics_ai
+            WHERE visita_agendada = TRUE
+              AND DATE(analisado_em) = '{today}'
+        """)
+
+        with engine.connect() as conn:
+            result = conn.execute(query)
+            row = result.fetchone()
+            return row[0] if row else 0
+
+    except Exception as e:
+        print(f"Erro ao calcular visitas do dia: {e}")
+        return 0
 
 
 def calculate_daily_metrics(df):
@@ -196,7 +209,7 @@ def calculate_daily_metrics(df):
         'conversas_dia_perc': perc_conversas_dia,
         'conversas_reabertas': conversas_reabertas_hoje,
         'conversas_reabertas_perc': perc_reabertas,
-        'visitas_dia': calculate_visits_scheduled(df_today),
+        'visitas_dia': calculate_visits_scheduled_today(),  # CORRIGIDO: visitas agendadas HOJE
         'vendas_dia': 0  # TODO: Integrar com CRM
     }
 
@@ -481,6 +494,7 @@ def get_leads_with_ai_analysis(engine, limit=50, offset=0, filters: dict = None)
     query = text(f"""
         SELECT
             contact_name AS nome,
+            nome_mapeado_bot,
             contact_phone AS celular,
             condicao_fisica,
             objetivo,
@@ -512,6 +526,7 @@ def get_leads_with_ai_analysis(engine, limit=50, offset=0, filters: dict = None)
         # Convert to DataFrame
         df = pd.DataFrame(rows, columns=[
             'Nome',
+            'Nome Mapeado Bot',
             'Celular',
             'Condição Física',
             'Objetivo',

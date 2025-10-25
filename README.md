@@ -11,34 +11,68 @@ Sistema completo de analytics que extrai dados de conversas do Chatwoot (banco r
 ```
 allpfit-analytics/
 ├── src/
-│   ├── app/                    # Dashboard Streamlit (em desenvolvimento)
-│   ├── features/               # Pipeline ETL e processamento
-│   │   └── etl_pipeline_v2.py  # ETL principal (120 campos)
+│   ├── app/                    # Dashboard Streamlit
+│   │   ├── dashboard.py        # Dashboard principal
+│   │   ├── config.py           # Tema e formatação
+│   │   └── utils/              # Utilidades do dashboard
+│   │
+│   ├── features/               # Features principais
+│   │   ├── etl/                # Pipeline ETL modular
+│   │   │   ├── extractor.py
+│   │   │   ├── transformer.py
+│   │   │   ├── loader.py
+│   │   │   └── watermark_manager.py
+│   │   │
+│   │   ├── etl_pipeline_v3.py  # ETL V3 incremental
+│   │   │
+│   │   ├── analyzers/          # Analisadores de conversas
+│   │   │   ├── rule_based.py   # Análise por regras
+│   │   │   ├── gpt4.py         # Análise com IA
+│   │   │   └── initial_load.py # Carga inicial
+│   │   │
+│   │   └── crm/                # Integração CRM
+│   │       └── crossmatch.py   # Crossmatch Excel ↔ Bot
+│   │
+│   ├── integrations/           # Integrações externas
+│   │   └── evo_crm.py          # Cliente API EVO
+│   │
 │   └── shared/                 # Código compartilhado
 │       ├── config.py           # Configurações centralizadas
 │       └── database.py         # Conexões de banco
 │
+├── scripts/                    # Scripts de automação
+│   ├── etl/
+│   │   ├── run_manual.sh       # Executar ETL manualmente
+│   │   ├── monitor.sh          # Monitorar ETL
+│   │   └── status.sh           # Status do ETL
+│   │
+│   ├── analysis/
+│   │   └── run_gpt4.py         # Análise GPT-4 manual
+│   │
+│   └── deployment/
+│       └── restart_dashboard.sh # Reiniciar dashboard
+│
+├── data/                       # Dados do projeto
+│   ├── backups/                # Backups CSV do ETL
+│   ├── input/                  # Arquivos de entrada (Excel)
+│   └── reports/                # Relatórios gerados
+│
 ├── sql/
 │   ├── modular_views/          # Views do banco remoto (Chatwoot)
-│   │   ├── 00_deploy_all_views_CLEAN.sql  # Deploy de todas as views
-│   │   ├── 01-06_*.sql         # Views modulares
-│   │   └── 07_vw_conversations_analytics_final.sql  # View final (118 campos)
-│   └── local_schema/
-│       └── 01_create_schema.sql  # Schema do banco local
+│   └── local_schema/           # Schema do banco local
 │
-├── scripts/                    # Scripts utilitários
-│   ├── test_connection.py
-│   └── test_new_views.py
+├── docs/                       # Documentação
+│   ├── ETL_V3_README.md        # Documentação ETL V3
+│   ├── schema_explicacao.md    # Explicação do schema
+│   ├── CHANGELOG.md            # Histórico de mudanças
+│   └── CONTEXT.md              # Contexto do projeto
 │
-├── docs/                       # Documentação completa
-│   ├── dashboard_kpis_completo.md  # 60+ KPIs mapeados
-│   ├── etl_resumo_sucesso.md       # Resumo do ETL
-│   └── schema_explicacao.md        # Explicação do schema
+├── tests/                      # Testes (estrutura preparada)
 │
-├── data/backups/               # Backups CSV (não versionados)
 ├── .env                        # Credenciais (não versionado)
 ├── .env.example                # Template de configuração
-├── requirements.txt            # Dependências
+├── requirements.txt            # Dependências de produção
+├── requirements-dev.txt        # Dependências de desenvolvimento
 └── README.md
 ```
 
@@ -109,29 +143,45 @@ psql -U isaac -d allpfit -f sql/local_schema/01_create_schema.sql
 ### Executar ETL manualmente
 
 ```bash
-python3 src/features/etl_pipeline_v2.py
+# Incremental (padrão - apenas dados novos)
+bash scripts/etl/run_manual.sh
+
+# Carga completa (todos os dados)
+bash scripts/etl/run_manual.sh --full
 ```
 
-**O que o ETL faz:**
-1. **EXTRACT:** Busca dados da view `vw_conversations_analytics_final` (remoto)
-2. **TRANSFORM:** Processa e limpa 118 campos
-3. **LOAD:** Insere 4.169+ conversas no banco local
-4. **BACKUP:** Salva CSV em `data/backups/`
-5. **STATS:** Mostra estatísticas dos dados
+**O que o ETL V3 faz:**
+1. **EXTRACT:** Busca dados incrementais da view `vw_conversations_analytics_final` (remoto)
+2. **TRANSFORM:** Processa e valida 118 campos
+3. **LOAD:** UPSERT inteligente (INSERT novos, UPDATE modificados)
+4. **WATERMARK:** Controla ponto de sincronização automático
+5. **AUDIT:** Registra execução na tabela `etl_control`
 
 **Performance:**
-- ⚡ 4.169 conversas em ~6 segundos
+- ⚡ Modo incremental: ~2-5 segundos (apenas novos dados)
 - 📊 118 campos da view remota → 120 campos locais
-- 💾 Backup automático de 14+ MB
+- 💾 Logs estruturados em `logs/etl/`
 
-### Agendar ETL (1x por dia às 3h)
+### Monitorar ETL
 
 ```bash
-# Editar crontab
-crontab -e
+# Ver status do ETL
+bash scripts/etl/status.sh
 
-# Adicionar:
-0 3 * * * cd /home/isaac/projects/allpfit-analytics && source venv/bin/activate && python3 src/features/etl_pipeline_v2.py >> logs/etl_$(date +\%Y\%m\%d).log 2>&1
+# Monitorar logs em tempo real
+bash scripts/etl/monitor.sh
+```
+
+### Agendar ETL (automático - 1x por hora)
+
+O ETL já está agendado via cron para executar a cada hora:
+
+```bash
+# Ver agendamentos
+crontab -l | grep etl
+
+# Executar manualmente se necessário
+bash scripts/etl/run_manual.sh
 ```
 
 ## 📊 Dados e Views
@@ -203,17 +253,49 @@ Dashboard Streamlit
 
 Ver: `docs/dashboard_kpis_completo.md`
 
+## 🔗 Integração CRM
+
+### Crossmatch Excel ↔ Bot
+
+Identifica conversões reais (leads que falaram com o bot ANTES de entrar no CRM):
+
+```bash
+# 1. Colocar arquivo base_evo.xlsx em data/input/
+# 2. Executar crossmatch
+python3 src/features/crm/crossmatch.py
+
+# O script irá:
+# - Normalizar telefones (remove DDI/DDD, testa com/sem 9)
+# - Cruzar com conversas do bot
+# - Identificar conversões (bot → CRM)
+# - Salvar no banco: conversas_crm_match_real
+# - Gerar relatório em data/reports/
+```
+
+### Análise com IA (GPT-4)
+
+```bash
+# Analisar conversas com GPT-4
+python3 scripts/analysis/run_gpt4.py
+
+# Analisar apenas 10 conversas
+python3 scripts/analysis/run_gpt4.py --limit 10
+
+# Modo silencioso
+python3 scripts/analysis/run_gpt4.py --quiet
+```
+
 ## 🧪 Testes
 
 ```bash
-# Testar conexão com banco remoto
-python3 scripts/test_connection.py
-
-# Testar views remotas
-python3 scripts/test_new_views.py
+# Testar imports
+python3 -c "import sys; sys.path.insert(0, 'src'); from features.etl import extractor; print('✅ OK')"
 
 # Validar dados locais
 psql -U isaac -d allpfit -c "SELECT COUNT(*) FROM conversas_analytics;"
+
+# Ver últimas execuções do ETL
+psql -U isaac -d allpfit -c "SELECT * FROM etl_control ORDER BY execution_id DESC LIMIT 5;"
 ```
 
 ## 📚 Documentação
