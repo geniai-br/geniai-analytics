@@ -19,15 +19,6 @@ jobs:
       with:
         python-version: "3.11"
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install build twine
-
-    - name: Build package
-      run: python -m build
-
     - name: Extract release notes
       id: extract_notes
       run: |
@@ -36,22 +27,32 @@ jobs:
         echo "Extracting notes for $VERSION"
 
     - name: Create GitHub Release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      uses: softprops/action-gh-release@v1
       with:
-        tag_name: ${{ github.ref }}
-        release_name: Release ${{ steps.extract_notes.outputs.version }}
+        name: Release ${{ steps.extract_notes.outputs.version }}
         body: |
           ## 🚀 Release ${{ steps.extract_notes.outputs.version }}
 
-          See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/docs/CHANGELOG.md) for details.
+          ### 📋 Novidades / What's New
 
-          ### Installation
+          Veja o [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/docs/CHANGELOG.md) para detalhes completos.
+
+          ### 📦 Instalação / Installation
+
           ```bash
           git clone -b ${{ steps.extract_notes.outputs.version }} https://github.com/${{ github.repository }}.git
           cd allpfit-analytics
+          python3 -m venv venv
+          source venv/bin/activate
           pip install -r requirements.txt
           ```
+
+          ### 📚 Documentação / Documentation
+
+          - [README](https://github.com/${{ github.repository }}/blob/main/README.md)
+          - [CONTRIBUTING](https://github.com/${{ github.repository }}/blob/main/CONTRIBUTING.md)
+          - [SECURITY](https://github.com/${{ github.repository }}/blob/main/SECURITY.md)
+
         draft: false
         prerelease: false
+        generate_release_notes: true
