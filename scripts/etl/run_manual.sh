@@ -3,8 +3,8 @@
 # Executar ETL manualmente
 #
 # Uso:
-#   bash scripts/run_etl_manual.sh          # Incremental
-#   bash scripts/run_etl_manual.sh --full   # Carga completa
+#   bash scripts/etl/run_manual.sh          # Incremental
+#   bash scripts/etl/run_manual.sh --full   # Carga completa
 #
 
 set -e

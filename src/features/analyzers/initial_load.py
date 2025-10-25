@@ -12,7 +12,7 @@ from sqlalchemy import create_engine, text
 # Adicionar path do projeto
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from features.rule_based_analyzer import analyze_and_save
+from features.analyzers.rule_based import analyze_and_save
 
 load_dotenv()
 

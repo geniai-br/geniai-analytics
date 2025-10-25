@@ -43,9 +43,11 @@ def get_analysis_prompt() -> str:
 Sua tarefa é analisar a conversa completa entre o lead e a academia e extrair as seguintes informações em formato JSON:
 
 {
+  "nome_mapeado_bot": "string - nome completo do lead que o bot descobriu durante a conversa (se mencionado)",
   "condicao_fisica": "string - opções: Sedentário | Iniciante | Intermediário | Avançado | Não mencionado",
   "objetivo": "string - opções: Perda de peso | Ganho de massa muscular | Condicionamento físico | Saúde geral | Estética/Definição | Não mencionado",
   "probabilidade_conversao": "number - de 0 a 5, onde:",
+  "visita_agendada": "boolean - true se houve confirmação de agendamento de visita, false caso contrário",
   "analise_ia": "string - análise detalhada com 3-5 parágrafos explicando:",
   "sugestao_disparo": "string - sugestão específica de mensagem para enviar ao lead"
 }
@@ -72,6 +74,20 @@ SUGESTÃO DE DISPARO (sugestao_disparo):
 - Incluir call-to-action claro (agendar visita, tirar dúvidas, etc)
 - Usar tom humanizado e empático
 - Máximo 3-4 frases
+
+NOME MAPEADO BOT (nome_mapeado_bot):
+- Extrair o NOME COMPLETO que o bot perguntou e o lead respondeu durante a conversa
+- Procurar por perguntas do tipo: "Qual é o seu nome?", "Como você se chama?", "Me diz seu nome"
+- O nome deve ser EXATAMENTE como o lead forneceu (primeiro e último nome se possível)
+- Se o lead NÃO forneceu seu nome durante a conversa, retornar string vazia ""
+- Não usar o nome do contato do sistema, apenas o que foi dito na conversa
+
+DETECÇÃO DE VISITA AGENDADA (visita_agendada):
+- Marcar TRUE se houver CONFIRMAÇÃO EXPLÍCITA de agendamento na conversa
+- Palavras-chave para TRUE: "visita agendada", "agendamento confirmado", "já agendei", "te espero", "vejo você", "nos vemos"
+- Marcar FALSE se o lead apenas perguntou sobre visita, mas NÃO confirmou
+- Marcar FALSE se ainda está em negociação ou pensando
+- A confirmação pode vir tanto do atendente quanto do próprio lead aceitando
 
 IMPORTANTE:
 - Analise TODO o histórico de mensagens, não apenas as últimas
@@ -130,7 +146,7 @@ Analise esta conversa e retorne o JSON com as informações solicitadas."""
             analysis = json.loads(content)
 
             # Validar campos obrigatórios
-            required_fields = ['condicao_fisica', 'objetivo', 'probabilidade_conversao', 'analise_ia', 'sugestao_disparo']
+            required_fields = ['nome_mapeado_bot', 'condicao_fisica', 'objetivo', 'probabilidade_conversao', 'visita_agendada', 'analise_ia', 'sugestao_disparo']
             for field in required_fields:
                 if field not in analysis:
                     print(f"⚠️  Campo obrigatório ausente: {field}")
@@ -176,41 +192,49 @@ def save_analysis_to_db(engine, conversation_id: int, analysis: Dict, model_name
     query = text("""
         INSERT INTO conversas_analytics_ai (
             conversation_id,
+            nome_mapeado_bot,
             condicao_fisica,
             objetivo,
             analise_ia,
             sugestao_disparo,
             probabilidade_conversao,
+            visita_agendada,
             analisado_em,
             modelo_ia
         ) VALUES (
             :conversation_id,
+            :nome_mapeado_bot,
             :condicao_fisica,
             :objetivo,
             :analise_ia,
             :sugestao_disparo,
             :probabilidade_conversao,
+            :visita_agendada,
             :analisado_em,
             :modelo_ia
         )
         ON CONFLICT (conversation_id)
         DO UPDATE SET
+            nome_mapeado_bot = EXCLUDED.nome_mapeado_bot,
             condicao_fisica = EXCLUDED.condicao_fisica,
             objetivo = EXCLUDED.objetivo,
             analise_ia = EXCLUDED.analise_ia,
             sugestao_disparo = EXCLUDED.sugestao_disparo,
             probabilidade_conversao = EXCLUDED.probabilidade_conversao,
+            visita_agendada = EXCLUDED.visita_agendada,
             analisado_em = EXCLUDED.analisado_em,
             modelo_ia = EXCLUDED.modelo_ia
     """)
 
     params = {
         'conversation_id': conversation_id,
+        'nome_mapeado_bot': analysis.get('nome_mapeado_bot', ''),
         'condicao_fisica': analysis.get('condicao_fisica', 'Não mencionado'),
         'objetivo': analysis.get('objetivo', 'Não mencionado'),
         'analise_ia': analysis.get('analise_ia', ''),
         'sugestao_disparo': analysis.get('sugestao_disparo', ''),
         'probabilidade_conversao': analysis.get('probabilidade_conversao', 0),
+        'visita_agendada': analysis.get('visita_agendada', False),
         'analisado_em': datetime.now(),
         'modelo_ia': model_name
     }

@@ -452,10 +452,10 @@ if vendas_trafego > 0:
     st.markdown("<hr>", unsafe_allow_html=True)
 
 # ============================================================================
-# SEÇÃO 5: LEADS NÃO CONVERTIDOS COM ANÁLISE DE IA
+# SEÇÃO 5: ANÁLISE GENIAI
 # ============================================================================
 
-st.markdown("### 🎯 Leads não convertidos")
+st.markdown("### 🎯 Análise GeniAI")
 st.caption("Use os filtros nas colunas abaixo para refinar a visualização. O download reflete exatamente o que está visível.")
 
 # ============================================================================
@@ -644,13 +644,37 @@ if total_leads > 0:
             df_export['Probabilidade'] = df_export['Probabilidade'].apply(format_probabilidade_export)
 
             # Tratar campos vazios (mesma forma da visualização)
+            df_export['Nome Mapeado Bot'] = df_export['Nome Mapeado Bot'].fillna("-").replace('', '-')
             df_export['Análise IA'] = df_export['Análise IA'].fillna("-")
             df_export['Sugestão de Disparo'] = df_export['Sugestão de Disparo'].fillna("-")
             df_export['Condição Física'] = df_export['Condição Física'].fillna("-")
             df_export['Objetivo'] = df_export['Objetivo'].fillna("-")
 
-            # Converter para CSV (mantém TODAS as colunas visíveis)
-            csv = df_export.to_csv(index=False).encode('utf-8-sig')
+            # Garantir ordem EXATA das colunas (mesma ordem da tabela visível)
+            colunas_ordenadas = [
+                'Nome',
+                'Nome Mapeado Bot',
+                'Celular',
+                'Condição Física',
+                'Objetivo',
+                'Data Primeiro Contato',
+                'Data Última Conversa',
+                'Conversa Compilada',
+                'Análise IA',
+                'Data Atualização Tel',
+                'Sugestão de Disparo',
+                'Probabilidade'
+            ]
+
+            df_export = df_export[colunas_ordenadas]
+
+            # Converter para CSV no formato Excel Brasil (ponto e vírgula como separador)
+            csv = df_export.to_csv(
+                index=False,           # Sem índice
+                sep=';',               # Separador padrão Brasil/Excel
+                encoding='utf-8-sig',  # UTF-8 com BOM para Excel
+                lineterminator='\n'    # Quebra de linha padrão
+            ).encode('utf-8-sig')
 
             st.download_button(
                 label="📥 Baixar CSV",

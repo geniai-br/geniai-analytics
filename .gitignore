@@ -49,8 +49,14 @@ htmlcov/
 # mypy
 .mypy_cache/
 
-# Data
-data/
+# Data (mantém estrutura mas ignora conteúdo)
+data/backups/*
+data/input/*
+data/reports/*
+!data/.gitkeep
+!data/backups/.gitkeep
+!data/input/.gitkeep
+!data/reports/.gitkeep
 *.csv
 
 # Excel base files
