@@ -64,13 +64,6 @@ def main():
 
     authenticated = is_authenticated()
 
-    # DEBUG temporário
-    if 'authenticated' in st.session_state:
-        st.sidebar.write(f"DEBUG: session_state.authenticated = {st.session_state['authenticated']}")
-    if 'session_id' in st.session_state:
-        st.sidebar.write(f"DEBUG: session_state.session_id = {st.session_state['session_id'][:8]}...")
-    st.sidebar.write(f"DEBUG: is_authenticated() = {authenticated}")
-
     if not authenticated:
         # Não autenticado → Mostrar login
         apply_login_css()

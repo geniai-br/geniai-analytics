@@ -25,6 +25,7 @@ from app.config import format_number, format_percentage
 # QUERIES DE DADOS (COM RLS AUTOMÁTICO)
 # ============================================================================
 
+@st.cache_data(ttl=300)  # Cache de 5 minutos
 def load_conversations(tenant_id, date_start=None, date_end=None):
     """
     Carrega conversas do tenant (filtrado automaticamente via RLS)

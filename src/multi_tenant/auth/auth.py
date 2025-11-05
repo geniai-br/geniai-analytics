@@ -6,11 +6,19 @@ Responsável por: login, logout, validação de sessão, gerenciamento de databa
 import os
 import bcrypt
 import uuid
+import logging
 from datetime import datetime, timedelta
 from typing import Optional, Dict
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 import streamlit as st
+
+# Configurar logger
+logger = logging.getLogger(__name__)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 
 
 # ============================================================================
@@ -83,11 +91,7 @@ def authenticate_user(engine: Engine, email: str, password: str) -> Optional[Dic
     Raises:
         Exception: Em caso de erro no banco
     """
-    print(f"\n{'='*60}")
-    print(f"DEBUG authenticate_user() - INÍCIO")
-    print(f"  Email: {email}")
-    print(f"  Password length: {len(password)}")
-    print(f"{'='*60}\n")
+    logger.info(f"Tentativa de login: {email}")
 
     try:
         with engine.connect() as conn:  # Usar connect() com commit explícito
@@ -113,38 +117,31 @@ def authenticate_user(engine: Engine, email: str, password: str) -> Optional[Dic
 
             result = conn.execute(query, {'email': email}).fetchone()
 
-            print(f"DEBUG - Usuário encontrado no banco: {result is not None}")
-
             if not result:
-                print(f"DEBUG - RETORNO: None (usuário não encontrado)")
+                logger.warning(f"Login falhou: usuário não encontrado - {email}")
                 return None
 
             # Verificar senha (bcrypt)
             password_hash = result.password_hash
-            print(f"DEBUG - Verificando senha...")
             password_check = bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8'))
-            print(f"DEBUG - Senha correta: {password_check}")
 
             if not password_check:
-                print(f"DEBUG - RETORNO: None (senha incorreta)")
+                logger.warning(f"Login falhou: senha incorreta - {email}")
                 return None
 
             # Verificar se usuário está ativo
-            print(f"DEBUG - Usuário ativo: {result.is_active}")
             if not result.is_active:
-                print(f"DEBUG - EXCEÇÃO: Usuário inativo")
+                logger.warning(f"Login bloqueado: usuário inativo - {email}")
                 raise Exception("Usuário inativo. Entre em contato com o suporte.")
 
             # Verificar se tenant está ativo
-            print(f"DEBUG - Tenant status: {result.tenant_status}")
             if result.tenant_status != 'active':
-                print(f"DEBUG - EXCEÇÃO: Tenant não ativo")
+                logger.warning(f"Login bloqueado: tenant suspenso - {email}")
                 raise Exception("Acesso suspenso. Entre em contato com o suporte.")
 
             # Criar sessão
             session_id = str(uuid.uuid4())
             expires_at = datetime.now() + timedelta(hours=24)  # Sessão expira em 24h
-            print(f"DEBUG - Criando sessão: {session_id}")
 
             # Obter IP do usuário (se disponível via Streamlit)
             try:
@@ -166,24 +163,14 @@ def authenticate_user(engine: Engine, email: str, password: str) -> Optional[Dic
                 VALUES (:session_id, :user_id, :tenant_id, :ip_address, :user_agent, :expires_at)
             """)
 
-            print(f"DEBUG - Tentando inserir sessão no banco...")
-            print(f"DEBUG - session_id: {session_id}")
-            print(f"DEBUG - user_id: {result.user_id}")
-            print(f"DEBUG - tenant_id: {result.tenant_id}")
-
-            try:
-                conn.execute(insert_session, {
-                    'session_id': session_id,
-                    'user_id': result.user_id,
-                    'tenant_id': result.tenant_id,
-                    'ip_address': ip_address,
-                    'user_agent': user_agent,
-                    'expires_at': expires_at
-                })
-                print(f"DEBUG - INSERT executado com sucesso")
-            except Exception as insert_error:
-                print(f"DEBUG - ERRO NO INSERT: {insert_error}")
-                raise
+            conn.execute(insert_session, {
+                'session_id': session_id,
+                'user_id': result.user_id,
+                'tenant_id': result.tenant_id,
+                'ip_address': ip_address,
+                'user_agent': user_agent,
+                'expires_at': expires_at
+            })
 
             # Atualizar last_login
             update_login = text("""
@@ -195,20 +182,12 @@ def authenticate_user(engine: Engine, email: str, password: str) -> Optional[Dic
                 WHERE id = :user_id
             """)
 
-            print(f"DEBUG - Tentando UPDATE de last_login...")
-            try:
-                update_result = conn.execute(update_login, {
-                    'user_id': result.user_id,
-                    'ip_address': ip_address
-                })
-                print(f"DEBUG - UPDATE executado, rows affected: {update_result.rowcount}")
-            except Exception as update_error:
-                print(f"DEBUG - ERRO NO UPDATE: {update_error}")
-                raise
+            conn.execute(update_login, {
+                'user_id': result.user_id,
+                'ip_address': ip_address
+            })
 
-            print(f"DEBUG - Fazendo commit explícito...")
             conn.commit()
-            print(f"DEBUG - Commit realizado com sucesso!")
 
             # Retornar dados da sessão
             session_data = {
@@ -223,19 +202,13 @@ def authenticate_user(engine: Engine, email: str, password: str) -> Optional[Dic
                 'is_active': result.is_active,
             }
 
-            print(f"DEBUG - Sessão criada com sucesso!")
-            print(f"DEBUG - user_id: {session_data['user_id']}")
-            print(f"DEBUG - tenant_id: {session_data['tenant_id']}")
-            print(f"DEBUG - role: {session_data['role']}")
-            print(f"DEBUG - RETORNO: Dict com session_data")
-            print(f"{'='*60}\n")
+            logger.info(f"Login bem-sucedido: {email} (user_id={result.user_id}, tenant_id={result.tenant_id}, role={result.role})")
 
             return session_data
 
     except Exception as e:
         # Re-lançar exceção para ser tratada pela UI
-        print(f"DEBUG - EXCEÇÃO capturada: {str(e)}")
-        print(f"{'='*60}\n")
+        logger.error(f"Erro na autenticação para {email}: {str(e)}")
         raise Exception(f"Erro na autenticação: {str(e)}")
 
 
@@ -306,7 +279,7 @@ def validate_session(engine: Engine, session_id: str) -> Optional[Dict]:
             }
 
     except Exception as e:
-        print(f"Erro ao validar sessão: {e}")
+        logger.error(f"Erro ao validar sessão: {e}")
         return None
 
 
@@ -331,10 +304,13 @@ def logout_user(engine: Engine, session_id: str) -> bool:
             result = conn.execute(query, {'session_id': session_id})
             conn.commit()
 
+            if result.rowcount > 0:
+                logger.info(f"Logout realizado com sucesso: session_id={session_id[:8]}...")
+
             return result.rowcount > 0
 
     except Exception as e:
-        print(f"Erro ao fazer logout: {e}")
+        logger.error(f"Erro ao fazer logout: {e}")
         return False
 
 
@@ -358,10 +334,13 @@ def clear_expired_sessions(engine: Engine) -> int:
             result = conn.execute(query)
             conn.commit()
 
+            if result.rowcount > 0:
+                logger.info(f"Sessões expiradas removidas: {result.rowcount}")
+
             return result.rowcount
 
     except Exception as e:
-        print(f"Erro ao limpar sessões expiradas: {e}")
+        logger.error(f"Erro ao limpar sessões expiradas: {e}")
         return 0
 
 
@@ -378,5 +357,5 @@ def check_database_connection() -> bool:
             conn.execute(text("SELECT 1"))
         return True
     except Exception as e:
-        print(f"Erro na conexão com banco: {e}")
+        logger.error(f"Erro na conexão com banco: {e}")
         return False

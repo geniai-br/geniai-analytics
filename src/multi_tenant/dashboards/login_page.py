@@ -5,7 +5,7 @@ Design: Tema dark profissional com centralização perfeita (azul #1E90FF + lara
 """
 
 import streamlit as st
-import time
+import re
 from pathlib import Path
 import sys
 
@@ -15,6 +15,28 @@ if src_path not in sys.path:
     sys.path.insert(0, src_path)
 
 from multi_tenant.auth import authenticate_user, get_database_engine
+
+
+# ============================================================================
+# VALIDAÇÃO
+# ============================================================================
+
+def validate_email(email: str) -> bool:
+    """
+    Valida formato básico de email
+
+    Args:
+        email: String do email
+
+    Returns:
+        bool: True se válido, False caso contrário
+    """
+    if not email:
+        return False
+
+    # Regex simples para validar email
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return re.match(pattern, email) is not None
 
 
 # ============================================================================
@@ -391,7 +413,12 @@ def show_login_page():
             if submit:
                 # Validar campos vazios
                 if not email or not password:
-                    st.error("Preencha todos os campos")
+                    st.error("❌ Preencha todos os campos")
+                    st.stop()
+
+                # Validar formato de email
+                if not validate_email(email):
+                    st.error("❌ Formato de email inválido")
                     st.stop()
 
                 # Tentar autenticar
@@ -408,12 +435,8 @@ def show_login_page():
                             st.session_state['session_id'] = session_data['session_id']
                             st.session_state['user'] = session_data
 
-                            # DEBUG - Mostrar na tela temporariamente
-                            st.info(f"DEBUG: Session criada - ID: {session_data['session_id'][:8]}...")
-                            st.info(f"DEBUG: Role: {session_data['role']}, Tenant: {session_data['tenant_id']}")
-
                             # Feedback visual
-                            st.success(f"Bem-vindo, {session_data['full_name']}!")
+                            st.success(f"✅ Bem-vindo, {session_data['full_name']}!")
                             st.balloons()
 
                             # Redirecionar imediatamente
