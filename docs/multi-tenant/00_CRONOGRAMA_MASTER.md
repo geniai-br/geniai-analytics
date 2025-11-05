@@ -280,138 +280,517 @@ def test_admin_access():
 
 ---
 
-## 📅 FASE 2: SISTEMA DE AUTENTICAÇÃO (2-3 dias)
+## 📅 FASE 2: SISTEMA DE AUTENTICAÇÃO & UX MULTI-TENANT (2-3 dias)
+
+> **Nova Estratégia (2025-11-05):** Implementação focada em UX diferenciado por role
+> **Design Base:** Tema dark da porta 8503 (azul #1E90FF + laranja #FF8C00)
 
 ### Objetivos
-- Implementar login/logout
-- Gerenciamento de sessões
-- Middleware de autenticação para Streamlit
-- Tela de login responsiva
+- ✅ Tela de login moderna (tema dark)
+- ✅ Autenticação com bcrypt + sessions
+- ✅ **Fluxo diferenciado por role:**
+  - **Super Admin/Admin GeniAI** → Painel de seleção de clientes
+  - **Cliente** → Dashboard direto do seu tenant
+- ✅ Dashboard básico protegido
+- ✅ Configuração RLS automática
 
-### Tarefas
+---
 
-#### 2.1 - Módulo de Auth (Dia 1)
+### 🎨 UX Flow - Experiências por Role
 
-**Estrutura:**
+#### **FLUXO 1: Super Admin / Admin GeniAI (tenant_id = 0)**
 ```
-src/multi_tenant/auth/
-├── __init__.py
-├── password.py        # Hashing bcrypt
-├── session.py         # Gerenciamento de sessões
-├── login.py           # Lógica de login
-└── middleware.py      # Middleware Streamlit
+Login → Painel Admin GeniAI
+  ↓
+┌────────────────────────────────────┐
+│  🎛️  PAINEL ADMIN GENIAI          │
+│                                    │
+│  Bem-vindo, {nome}                 │
+│                                    │
+│  📊 Overview Geral:                │
+│  • Total Clientes: 2               │
+│  • Total Conversas: 1.234          │
+│  • Total Leads: 567                │
+│                                    │
+│  👥 Selecione um Cliente:          │
+│  ┌─────────────────────────────┐  │
+│  │ 📦 AllpFit CrossFit         │  │
+│  │ Inboxes: 2 | Usuários: 2    │  │
+│  │ [Ver Dashboard] →            │  │
+│  └─────────────────────────────┘  │
+│                                    │
+│  ┌─────────────────────────────┐  │
+│  │ 📦 Academia XYZ             │  │
+│  │ Inboxes: 1 | Usuários: 3    │  │
+│  │ [Ver Dashboard] →            │  │
+│  └─────────────────────────────┘  │
+│                                    │
+│  ⚙️ [Gerenciar Clientes]          │
+│  🚪 [Sair]                         │
+└────────────────────────────────────┘
 ```
 
-**Código base:**
+**Ao clicar em "Ver Dashboard":**
+- Redireciona para dashboard filtrado por aquele tenant
+- Mantém capacidade de voltar ao painel
+- Exibe nome do cliente no topo
+
+---
+
+#### **FLUXO 2: Cliente (ex: AllpFit - tenant_id = 1)**
+```
+Login → Dashboard Direto
+  ↓
+┌────────────────────────────────────┐
+│  📊 ANALYTICS - ALLPFIT           │
+│  👤 Isaac Santos (Admin)           │
+│                                    │
+│  [Filtros de Data] [Atualizar]    │
+│                                    │
+│  ┌─────┬─────┬─────┬─────┐       │
+│  │ KPI │ KPI │ KPI │ KPI │       │
+│  └─────┴─────┴─────┴─────┘       │
+│                                    │
+│  [Gráficos e Tabelas...]          │
+│                                    │
+│  🚪 [Sair]                         │
+└────────────────────────────────────┘
+```
+
+**Características:**
+- Sem painel de seleção (só vê seus dados)
+- Logo/cores personalizadas (tenant_configs)
+- Mesmo layout do dashboard da porta 8503
+
+---
+
+### 📂 Estrutura de Arquivos
+
+```
+src/multi_tenant/
+├── auth/
+│   ├── __init__.py          # Exports
+│   ├── auth.py              # Lógica única de autenticação + sessão
+│   └── middleware.py        # Proteção de rotas + RLS config
+│
+└── dashboards/
+    ├── app.py               # App principal (entry point)
+    ├── login_page.py        # Tela de login
+    ├── admin_panel.py       # Painel admin (seleção de clientes)
+    ├── client_dashboard.py  # Dashboard do cliente
+    └── components/
+        ├── header.py        # Header comum
+        └── metrics.py       # Reutilizar da porta 8503
+```
+
+---
+
+### Tarefas Detalhadas
+
+#### **2.1 - Módulo de Autenticação Unificado (3-4h)**
+
+**Arquivo: `src/multi_tenant/auth/auth.py`**
+
+Funções principais:
 ```python
-# src/multi_tenant/auth/password.py
-import bcrypt
+def authenticate_user(engine, email, password) -> dict:
+    """
+    Autentica e cria sessão
+    Returns: {
+        'session_id': UUID,
+        'user_id': int,
+        'tenant_id': int,
+        'email': str,
+        'full_name': str,
+        'role': str,  # 'super_admin', 'admin', 'client'
+        'tenant_name': str,
+        'tenant_slug': str
+    }
+    """
+    # 1. Buscar user + tenant no banco
+    # 2. Verificar senha (bcrypt)
+    # 3. Criar sessão
+    # 4. Retornar dados completos
 
-def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-
-def verify_password(password: str, password_hash: str) -> bool:
-    return bcrypt.checkpw(password.encode(), password_hash.encode())
-```
-
-```python
-# src/multi_tenant/auth/session.py
-from datetime import datetime, timedelta
-import uuid
-
-def create_session(user_id, tenant_id, expires_hours=24):
-    """Cria nova sessão no banco"""
-    session_id = str(uuid.uuid4())
-    expires_at = datetime.now() + timedelta(hours=expires_hours)
-    # INSERT INTO sessions ...
-    return session_id
-
-def validate_session(session_id):
-    """Valida se sessão está ativa"""
+def validate_session(engine, session_id) -> dict | None:
+    """Valida sessão e retorna dados do user + tenant"""
     # SELECT * FROM sessions WHERE id = ? AND expires_at > NOW()
-    return session_data or None
+    # JOIN users, tenants
 
-def destroy_session(session_id):
-    """Destroi sessão (logout)"""
+def logout_user(engine, session_id) -> bool:
+    """Destroi sessão"""
     # DELETE FROM sessions WHERE id = ?
+
+def get_database_engine() -> Engine:
+    """Retorna engine SQLAlchemy com cache"""
+    # Cache no st.cache_resource
 ```
 
-#### 2.2 - Tela de Login (Dia 2 - manhã)
+**Arquivo: `src/multi_tenant/auth/middleware.py`**
 
 ```python
-# src/multi_tenant/dashboards/login.py
-import streamlit as st
-from multi_tenant.auth.login import authenticate_user
-
-def show_login_page():
-    st.title("🔐 GeniAI Analytics - Login")
-
-    with st.form("login_form"):
-        email = st.text_input("Email")
-        password = st.text_input("Password", type="password")
-        submitted = st.form_submit_button("Entrar")
-
-        if submitted:
-            user = authenticate_user(email, password)
-            if user:
-                session_id = create_session(user.id, user.tenant_id)
-                st.session_state.session_id = session_id
-                st.session_state.user = user
-                st.rerun()
-            else:
-                st.error("Credenciais inválidas")
-```
-
-#### 2.3 - Middleware de Proteção (Dia 2 - tarde)
-
-```python
-# src/multi_tenant/auth/middleware.py
-import streamlit as st
-from multi_tenant.auth.session import validate_session
-
-def require_authentication():
-    """Decorator para proteger páginas"""
+def require_authentication() -> dict:
+    """
+    Middleware para proteger páginas
+    - Valida sessão
+    - Configura RLS context
+    - Retorna session_data
+    """
     if 'session_id' not in st.session_state:
+        # Redirecionar para login
         show_login_page()
         st.stop()
 
-    session = validate_session(st.session_state.session_id)
+    session = validate_session(engine, st.session_state.session_id)
+
     if not session:
-        st.error("Sessão expirada. Faça login novamente.")
-        del st.session_state.session_id
-        st.rerun()
+        # Sessão expirada
+        clear_session_state()
+        st.error("Sessão expirada")
+        st.stop()
+
+    # Configurar RLS
+    set_rls_context(engine, session['tenant_id'], session['user_id'])
 
     return session
+
+def set_rls_context(engine, tenant_id, user_id):
+    """Configura variáveis PostgreSQL para RLS"""
+    with engine.connect() as conn:
+        conn.execute(text("SET app.current_tenant_id = :tid"), {'tid': tenant_id})
+        conn.execute(text("SET app.current_user_id = :uid"), {'uid': user_id})
 ```
 
-#### 2.4 - Integração com Dashboard (Dia 3)
+---
 
-**Modificar dashboard existente:**
+#### **2.2 - Tela de Login (2h)**
+
+**Arquivo: `src/multi_tenant/dashboards/login_page.py`**
+
+**Design (copiar tema da porta 8503):**
+- Background: `#0E1117` (dark)
+- Card de login: `#1A1F2E` (card dark)
+- Botão: `#1E90FF` (azul)
+- Inputs com foco: borda azul
+
+**Componentes:**
 ```python
-# src/app/dashboard.py
-from multi_tenant.auth.middleware import require_authentication
+def show_login_page():
+    """Tela de login moderna"""
 
-# No início do arquivo
-session = require_authentication()
-tenant_id = session['tenant_id']
-user_role = session['user_role']
+    # CSS customizado (tema dark)
+    apply_custom_css()
 
-# Filtrar dados pelo tenant
-df = df[df['tenant_id'] == tenant_id]
+    # Header
+    st.markdown("# 🔐 GeniAI Analytics")
+    st.caption("Sistema Multi-Tenant")
+
+    # Formulário
+    with st.form("login_form"):
+        email = st.text_input("📧 Email")
+        password = st.text_input("🔑 Senha", type="password")
+        submit = st.form_submit_button("🚀 Entrar")
+
+        if submit:
+            if not email or not password:
+                st.error("Preencha todos os campos")
+                return
+
+            try:
+                engine = get_database_engine()
+                session = authenticate_user(engine, email, password)
+
+                if session:
+                    # Salvar no session_state
+                    st.session_state['authenticated'] = True
+                    st.session_state['session_id'] = session['session_id']
+                    st.session_state['user'] = session
+
+                    st.success(f"Bem-vindo, {session['full_name']}!")
+                    st.balloons()
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error("Email ou senha incorretos")
+
+            except Exception as e:
+                st.error(f"Erro: {e}")
+
+    # Credenciais de DEV
+    if ENVIRONMENT == 'development':
+        show_dev_credentials()
 ```
 
-### Commits
-- `feat(auth): add password hashing module`
-- `feat(auth): implement session management`
-- `feat(auth): create login page`
-- `feat(auth): add authentication middleware`
-- `refactor(dashboard): integrate auth protection`
+---
 
-### Entregáveis
-- ✅ Sistema de autenticação funcional
-- ✅ Login/logout operacional
-- ✅ Sessões persistentes
-- ✅ Dashboard protegido por login
+#### **2.3 - Painel Admin (3-4h)**
+
+**Arquivo: `src/multi_tenant/dashboards/admin_panel.py`**
+
+**Funcionalidades:**
+1. Overview geral (métricas agregadas)
+2. Lista de clientes (cards clicáveis)
+3. Botão "Ver Dashboard" por cliente
+4. Link para gerenciar clientes (Fase 5)
+
+```python
+def show_admin_panel(session):
+    """Painel de administração GeniAI"""
+
+    st.title("🎛️ Painel Admin GeniAI")
+    st.caption(f"Bem-vindo, {session['full_name']}")
+
+    # Header com logout
+    col1, col2 = st.columns([4, 1])
+    with col2:
+        if st.button("🚪 Sair"):
+            logout_user(engine, session['session_id'])
+            clear_session_state()
+            st.rerun()
+
+    st.divider()
+
+    # Overview Geral
+    st.subheader("📊 Overview Geral")
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        total_tenants = count_active_tenants()
+        st.metric("Clientes Ativos", total_tenants)
+
+    with col2:
+        total_conversations = count_all_conversations()
+        st.metric("Conversas Totais", format_number(total_conversations))
+
+    with col3:
+        total_leads = count_all_leads()
+        st.metric("Leads Totais", format_number(total_leads))
+
+    with col4:
+        conversion_rate = calculate_global_conversion_rate()
+        st.metric("Taxa Conversão", format_percentage(conversion_rate))
+
+    st.divider()
+
+    # Lista de Clientes
+    st.subheader("👥 Clientes")
+
+    tenants = get_active_tenants()
+
+    for tenant in tenants:
+        # Skip GeniAI Admin
+        if tenant['id'] == 0:
+            continue
+
+        # Card por cliente
+        with st.container():
+            col1, col2, col3 = st.columns([3, 1, 1])
+
+            with col1:
+                st.markdown(f"### 📦 {tenant['name']}")
+                st.caption(f"Slug: {tenant['slug']}")
+
+            with col2:
+                st.metric("Inboxes", len(tenant['inbox_ids']))
+                st.metric("Usuários", tenant['user_count'])
+
+            with col3:
+                if st.button("📊 Ver Dashboard", key=f"dash_{tenant['id']}"):
+                    # Armazenar tenant selecionado
+                    st.session_state['selected_tenant_id'] = tenant['id']
+                    st.rerun()
+
+        st.divider()
+
+    # Link para gerenciar
+    st.markdown("### ⚙️ Gerenciamento")
+    st.info("🚧 Gerenciar clientes será implementado na Fase 5")
+```
+
+---
+
+#### **2.4 - Dashboard Cliente (4-5h)**
+
+**Arquivo: `src/multi_tenant/dashboards/client_dashboard.py`**
+
+**Estratégia:** Copiar dashboard da porta 8503 e adaptar
+
+```python
+def show_client_dashboard(session, tenant_id=None):
+    """
+    Dashboard do cliente (ou admin visualizando cliente específico)
+
+    Args:
+        session: Dados da sessão
+        tenant_id: Se admin, pode visualizar tenant específico
+    """
+
+    # Determinar qual tenant mostrar
+    if session['role'] in ['super_admin', 'admin'] and tenant_id:
+        # Admin visualizando cliente específico
+        display_tenant_id = tenant_id
+        tenant_info = get_tenant(display_tenant_id)
+        show_back_button = True  # Botão voltar ao painel
+    else:
+        # Cliente vendo seus próprios dados
+        display_tenant_id = session['tenant_id']
+        tenant_info = session
+        show_back_button = False
+
+    # Configurar RLS para o tenant correto
+    set_rls_context(engine, display_tenant_id, session['user_id'])
+
+    # Header
+    col1, col2, col3 = st.columns([1, 4, 1])
+
+    with col1:
+        if show_back_button:
+            if st.button("← Voltar"):
+                del st.session_state['selected_tenant_id']
+                st.rerun()
+
+    with col2:
+        st.title(f"📊 Analytics - {tenant_info['tenant_name']}")
+        st.caption(f"👤 {session['full_name']} ({session['role']})")
+
+    with col3:
+        if st.button("🚪 Sair"):
+            logout_user(engine, session['session_id'])
+            clear_session_state()
+            st.rerun()
+
+    st.divider()
+
+    # === DASHBOARD (COPIAR DA PORTA 8503) ===
+
+    # Filtros de data
+    col1, col2, col3 = st.columns([3, 1, 1])
+    with col2:
+        date_start = st.date_input("Início")
+    with col3:
+        date_end = st.date_input("Fim")
+
+    # Carregar dados (FILTRADO por tenant_id via RLS)
+    df = load_conversations(display_tenant_id, date_start, date_end)
+
+    # KPIs
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        total_contacts = calculate_total_contacts(df)
+        st.metric("Total Contatos", format_number(total_contacts))
+
+    with col2:
+        ai_conversations = calculate_ai_conversations(df)
+        st.metric("Conversas com IA", format_number(ai_conversations))
+
+    with col3:
+        leads = calculate_leads(df)
+        st.metric("Leads", format_number(leads))
+
+    with col4:
+        visits = calculate_visits_scheduled(df)
+        st.metric("Visitas Agendadas", format_number(visits))
+
+    # Gráficos (copiar da porta 8503)
+    # ...
+```
+
+---
+
+#### **2.5 - App Principal (Entry Point) (1-2h)**
+
+**Arquivo: `src/multi_tenant/dashboards/app.py`**
+
+**Lógica de roteamento:**
+
+```python
+def main():
+    """App principal - Router"""
+
+    # Configurar página
+    st.set_page_config(
+        page_title="Analytics GeniAI",
+        page_icon="📊",
+        layout="wide"
+    )
+
+    # Aplicar CSS tema dark
+    apply_custom_css()
+
+    # ========================================
+    # ROUTER
+    # ========================================
+
+    # 1. Verificar autenticação
+    if 'authenticated' not in st.session_state:
+        show_login_page()
+        return
+
+    # 2. Validar sessão
+    session = require_authentication()
+
+    # 3. Decidir o que mostrar baseado no role
+
+    # CASO 1: Super Admin ou Admin GeniAI
+    if session['role'] in ['super_admin', 'admin'] and session['tenant_id'] == 0:
+
+        # Se selecionou um cliente, mostrar dashboard
+        if 'selected_tenant_id' in st.session_state:
+            tenant_id = st.session_state['selected_tenant_id']
+            show_client_dashboard(session, tenant_id=tenant_id)
+        else:
+            # Mostrar painel admin
+            show_admin_panel(session)
+
+    # CASO 2: Cliente (qualquer role em tenant != 0)
+    else:
+        # Ir direto para dashboard
+        show_client_dashboard(session)
+
+
+if __name__ == "__main__":
+    main()
+```
+
+---
+
+### Commits (Sugestão)
+```bash
+# Após finalizar cada módulo
+git add src/multi_tenant/auth/
+git commit -m "feat(auth): implement authentication module with bcrypt + sessions"
+
+git add src/multi_tenant/dashboards/login_page.py
+git commit -m "feat(ui): create login page with dark theme"
+
+git add src/multi_tenant/dashboards/admin_panel.py
+git commit -m "feat(ui): create admin panel for client selection"
+
+git add src/multi_tenant/dashboards/client_dashboard.py
+git commit -m "feat(ui): create client dashboard with RLS filtering"
+
+git add src/multi_tenant/dashboards/app.py
+git commit -m "feat(app): implement main router with role-based UX"
+
+git add docs/multi-tenant/
+git commit -m "docs: update Phase 2 strategy and add DB documentation"
+```
+
+---
+
+### Entregáveis Finais
+
+- ✅ Login funcional com tema dark
+- ✅ Autenticação bcrypt + sessões no banco
+- ✅ **Admin GeniAI:** Painel de seleção de clientes
+- ✅ **Clientes:** Dashboard direto do seu tenant
+- ✅ RLS configurado automaticamente
+- ✅ Logout funcionando
+- ✅ Documentação completa (DB_DOCUMENTATION.md)
+- ✅ Base do dashboard copiada da porta 8503
+- ✅ Código limpo e reutilizável
 
 ---
 
