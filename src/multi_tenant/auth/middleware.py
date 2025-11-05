@@ -179,32 +179,20 @@ def is_authenticated() -> bool:
     Returns:
         bool: True se autenticado, False caso contrário
     """
-    print(f"DEBUG is_authenticated() - Iniciando verificação...")
-    print(f"  'authenticated' in session_state: {'authenticated' in st.session_state}")
-    print(f"  'session_id' in session_state: {'session_id' in st.session_state}")
-
     if 'authenticated' not in st.session_state:
-        print("  RESULTADO: False (sem 'authenticated')")
         return False
 
     if 'session_id' not in st.session_state:
-        print("  RESULTADO: False (sem 'session_id')")
         return False
 
     # Validar sessão no banco
     try:
         engine = get_database_engine()
         session_id = st.session_state.get('session_id')
-        print(f"  session_id obtido: {session_id}")
         session_data = validate_session(engine, session_id)
 
-        result = session_data is not None
-        print(f"  validate_session retornou: {session_data is not None}")
-        print(f"  RESULTADO FINAL: {result}")
-        return result
-    except Exception as e:
-        print(f"  ERRO ao validar: {e}")
-        print(f"  RESULTADO: False (exceção)")
+        return session_data is not None
+    except Exception:
         return False
 
 
