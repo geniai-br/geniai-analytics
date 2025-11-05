@@ -1,6 +1,31 @@
 # 🚀 SISTEMA MULTI-TENANT GENIAI
 
+> **Status:** 🟢 Fase 1 Completa | 🚀 Fase 2 Pronta para Implementar
+> **Última Atualização:** 2025-11-05
+
 Transformação do AllpFit Analytics em plataforma SaaS multi-tenant para clientes da GeniAI.
+
+---
+
+## 🆕 INÍCIO RÁPIDO (NOVO CHAT)
+
+**Para iniciar um novo chat e continuar o desenvolvimento:**
+
+### 📋 Copie este Prompt:
+```
+Preciso implementar FASE 2 (autenticação multi-tenant) do projeto GeniAI Analytics.
+
+Leia estes arquivos (nesta ordem):
+1. docs/multi-tenant/DB_DOCUMENTATION.md
+2. docs/multi-tenant/00_CRONOGRAMA_MASTER.md (seção FASE 2)
+3. docs/multi-tenant/02_UX_FLOW.md
+
+Depois, me ajude a implementar os 6 arquivos da Fase 2.
+
+Banco: geniai_analytics | User: isaac | Pass: AllpFit2024@Analytics
+```
+
+**Ou veja o prompt completo:** [PROMPT_NOVO_CHAT.md](./PROMPT_NOVO_CHAT.md)
 
 ---
 
