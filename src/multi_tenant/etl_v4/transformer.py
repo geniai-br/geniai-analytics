@@ -22,6 +22,9 @@ from typing import Dict, List, Any, Optional
 import pandas as pd
 import numpy as np
 
+# Importar LeadAnalyzer (Fase 4)
+from .lead_analyzer import LeadAnalyzer
+
 # Configurar logging estruturado
 logging.basicConfig(
     level=logging.INFO,
@@ -33,15 +36,24 @@ logger = logging.getLogger(__name__)
 class ConversationTransformer:
     """Transforma dados de conversas do formato remoto para o formato local"""
 
-    def __init__(self, tenant_id: int):
+    def __init__(self, tenant_id: int, enable_lead_analysis: bool = True):
         """
         Inicializa o transformer.
 
         Args:
             tenant_id: ID do tenant para o qual os dados serão transformados
+            enable_lead_analysis: Se deve aplicar análise de leads (Fase 4)
         """
         self.tenant_id = tenant_id
-        logger.info(f"ConversationTransformer inicializado para tenant {tenant_id}")
+        self.enable_lead_analysis = enable_lead_analysis
+
+        # Inicializar LeadAnalyzer se habilitado (Fase 4)
+        if self.enable_lead_analysis:
+            self.lead_analyzer = LeadAnalyzer(tenant_id=tenant_id)
+            logger.info(f"ConversationTransformer inicializado para tenant {tenant_id} COM análise de leads")
+        else:
+            self.lead_analyzer = None
+            logger.info(f"ConversationTransformer inicializado para tenant {tenant_id} SEM análise de leads")
 
     def transform_chunk(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -78,11 +90,19 @@ class ConversationTransformer:
         # Campos calculados (se não existirem)
         df = self._add_calculated_fields(df)
 
-        # ⚠️ PROXIES TEMPORÁRIOS: Colunas ausentes no banco remoto
-        # Estes campos serão sempre NULL/False por enquanto
-        # TODO: Implementar análise de texto/IA na Fase 4
-        logger.debug("Aplicando proxies temporários para colunas ausentes")
-        # (Não precisamos adicionar aqui pois o banco já tem defaults)
+        # ✅ FASE 4: Análise de Leads com IA
+        if self.enable_lead_analysis and self.lead_analyzer:
+            logger.info("Aplicando análise de leads (Fase 4)")
+            df = self.lead_analyzer.analyze_dataframe(df)
+
+            # Mostrar estatísticas
+            stats = self.lead_analyzer.get_statistics(df)
+            logger.info(f"Estatísticas de análise: {stats['total_leads']} leads, "
+                       f"{stats['total_visits']} visitas, "
+                       f"{stats['total_conversions']} conversões "
+                       f"(taxa: {stats['lead_rate']:.1f}%)")
+        else:
+            logger.debug("Análise de leads desabilitada, usando placeholders")
 
         logger.info(f"Transformação concluída: {len(df)} conversas processadas")
         return df
