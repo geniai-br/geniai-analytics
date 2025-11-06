@@ -1183,6 +1183,7 @@ def test_tenant_data_isolation():
 - Visão consolidada de todos os clientes
 - Gerenciamento de tenants e usuários
 - Métricas agregadas
+- **Adicionar demais clientes do Chatwoot à plataforma**
 
 ### Tarefas
 
@@ -1292,6 +1293,51 @@ def show_clients_management():
                 if st.button("⚙️ Configurar", key=f"config_{tenant.id}"):
                     st.session_state.editing_tenant = tenant.id
 ```
+
+#### 5.4 - Migração dos Clientes do Chatwoot (Dia 3)
+
+**Clientes Disponíveis no Banco Remoto:**
+
+Existem **6 clientes adicionais** no Chatwoot para serem migrados:
+
+| Account ID | Nome | Inboxes | Total Conversas | Prioridade |
+|------------|------|---------|-----------------|------------|
+| 6 | CDT Mossoró | 1 | 592 | Alta |
+| 7 | CDT JP Sul | 6 | 262 | Alta |
+| 10 | CDT Viamao | 1 | 247 | Média |
+| 11 | Gestao GeniAI | 3 | 14 | Baixa |
+| 12 | InvestBem | 2 | 11 | Baixa |
+| 14 | CDT Tubarão SC | 2 | 2 | Baixa |
+
+**Processo de Migração:**
+
+1. **Via Interface Admin** (Recomendado):
+   - Usar formulário "Adicionar Novo Cliente"
+   - Selecionar account do Chatwoot
+   - Mapear inboxes automaticamente
+   - Sistema cria tenant + usuário admin
+   - ETL roda automaticamente
+
+2. **Ordem Sugerida:**
+   - Primeiro: CDT Mossoró e CDT JP Sul (maior volume)
+   - Depois: CDT Viamao
+   - Por último: Gestao GeniAI, InvestBem, CDT Tubarão SC
+
+3. **Validação Pós-Migração:**
+   ```bash
+   # Para cada tenant adicionado, rodar:
+   python3 src/multi_tenant/etl_v4/pipeline.py --tenant-id <ID>
+
+   # Verificar isolamento de dados (RLS):
+   # - Login como cada cliente
+   # - Confirmar que só vê seus dados
+   # - Testar métricas agregadas no dashboard admin
+   ```
+
+**Resultado Esperado:**
+- Total: 7 clientes ativos (1 AllpFit + 6 migrados)
+- ~1.710 conversas carregadas
+- Dashboard admin mostrando métricas consolidadas
 
 **Métricas Agregadas:**
 ```python
