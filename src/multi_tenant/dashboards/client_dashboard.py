@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import sys
 from sqlalchemy import text
+import io
 
 # Adicionar src ao path
 src_path = str(Path(__file__).parent.parent.parent)
@@ -161,7 +162,6 @@ def calculate_metrics(df):
             'leads': 0,
             'visits_scheduled': 0,
             'crm_converted': 0,
-            'conversion_rate': 0,
         }
 
     metrics = {
@@ -171,12 +171,6 @@ def calculate_metrics(df):
         'visits_scheduled': len(df[df['visit_scheduled'] == True]),
         'crm_converted': len(df[df['crm_converted'] == True]),
     }
-
-    # Taxa de conversão (leads / conversas com IA)
-    if metrics['ai_conversations'] > 0:
-        metrics['conversion_rate'] = (metrics['leads'] / metrics['ai_conversations']) * 100
-    else:
-        metrics['conversion_rate'] = 0
 
     return metrics
 
@@ -208,6 +202,138 @@ def prepare_leads_by_day(df):
     leads_by_day = leads_by_day.sort_values('Data')
 
     return leads_by_day
+
+
+def prepare_leads_by_inbox(df):
+    """
+    Prepara dados de leads por inbox para gráfico
+
+    Args:
+        df: DataFrame com conversas
+
+    Returns:
+        pd.DataFrame: Leads agrupados por inbox
+    """
+    if df.empty:
+        return pd.DataFrame(columns=['Inbox', 'Leads'])
+
+    # Filtrar apenas leads
+    leads_df = df[df['is_lead'] == True].copy()
+
+    if leads_df.empty:
+        return pd.DataFrame(columns=['Inbox', 'Leads'])
+
+    # Agrupar por inbox
+    leads_by_inbox = leads_df.groupby('inbox_name').size().reset_index(name='Leads')
+    leads_by_inbox.rename(columns={'inbox_name': 'Inbox'}, inplace=True)
+
+    # Ordenar por quantidade de leads (descendente)
+    leads_by_inbox = leads_by_inbox.sort_values('Leads', ascending=False)
+
+    return leads_by_inbox
+
+
+def prepare_score_distribution(df):
+    """
+    Prepara dados de distribuição de score IA para gráfico de pizza
+
+    Args:
+        df: DataFrame com conversas
+
+    Returns:
+        pd.DataFrame: Distribuição de score IA
+    """
+    if df.empty:
+        return pd.DataFrame(columns=['Classificação', 'Quantidade'])
+
+    # Filtrar apenas leads com classificação
+    leads_df = df[df['is_lead'] == True].copy()
+
+    if leads_df.empty:
+        return pd.DataFrame(columns=['Classificação', 'Quantidade'])
+
+    # Agrupar por classificação IA
+    score_dist = leads_df.groupby('ai_probability_label').size().reset_index(name='Quantidade')
+    score_dist.rename(columns={'ai_probability_label': 'Classificação'}, inplace=True)
+
+    # Ordenar por ordem de prioridade (Alto > Médio > Baixo > N/A)
+    order = {'Alto': 1, 'Médio': 2, 'Baixo': 3, 'N/A': 4}
+    score_dist['_order'] = score_dist['Classificação'].map(order)
+    score_dist = score_dist.sort_values('_order').drop('_order', axis=1)
+
+    return score_dist
+
+
+def prepare_csv_export(df):
+    """
+    Prepara dados para exportação CSV
+
+    Args:
+        df: DataFrame com conversas
+
+    Returns:
+        str: CSV formatado como string
+    """
+    if df.empty:
+        return None
+
+    # Filtrar apenas leads
+    leads_df = df[df['is_lead'] == True].copy()
+
+    if leads_df.empty:
+        return None
+
+    # Selecionar e renomear colunas para exportação
+    export_df = leads_df[[
+        'conversation_display_id',
+        'contact_name',
+        'contact_phone',
+        'contact_email',
+        'inbox_name',
+        'conversation_date',
+        'is_lead',
+        'visit_scheduled',
+        'crm_converted',
+        'ai_probability_label',
+        'ai_probability_score',
+        'total_messages',
+        'contact_messages',
+        'agent_messages',
+        'conversation_status'
+    ]].copy()
+
+    # Renomear colunas para português
+    export_df.columns = [
+        'ID Conversa',
+        'Nome Contato',
+        'Telefone',
+        'Email',
+        'Inbox',
+        'Data',
+        'Lead',
+        'Visita Agendada',
+        'Convertido CRM',
+        'Classificação IA',
+        'Score IA (%)',
+        'Total Mensagens',
+        'Mensagens Contato',
+        'Mensagens Agente',
+        'Status'
+    ]
+
+    # Formatar booleanos
+    export_df['Lead'] = export_df['Lead'].apply(lambda x: 'Sim' if x else 'Não')
+    export_df['Visita Agendada'] = export_df['Visita Agendada'].apply(lambda x: 'Sim' if x else 'Não')
+    export_df['Convertido CRM'] = export_df['Convertido CRM'].apply(lambda x: 'Sim' if x else 'Não')
+
+    # Formatar status
+    status_map = {0: 'Aberta', 1: 'Resolvida', 2: 'Pendente'}
+    export_df['Status'] = export_df['Status'].map(status_map)
+
+    # Converter para CSV
+    csv_buffer = io.StringIO()
+    export_df.to_csv(csv_buffer, index=False, encoding='utf-8-sig')  # utf-8-sig para Excel
+    return csv_buffer.getvalue()
 
 
 # ============================================================================
@@ -253,19 +379,62 @@ def render_kpis(metrics):
     Args:
         metrics: Dict com métricas calculadas
     """
-    col1, col2, col3, col4 = st.columns(4)
+    # Linha 1: Métricas principais
+    col1, col2, col3, col4, col5 = st.columns(5)
 
     with col1:
         st.metric("Total Contatos", format_number(metrics['total_contacts']))
 
     with col2:
-        st.metric("Conversas com IA", format_number(metrics['ai_conversations']))
-
-    with col3:
         st.metric("Leads", format_number(metrics['leads']))
 
-    with col4:
+    with col3:
         st.metric("Visitas Agendadas", format_number(metrics['visits_scheduled']))
+
+    with col4:
+        st.metric("Conversões CRM", format_number(metrics['crm_converted']))
+
+    with col5:
+        st.metric("Taxa de Conversão", format_percentage(metrics['leads'], metrics['total_contacts']))
+
+    # Linha 2: Funil de conversão (visual)
+    st.divider()
+    st.subheader("🎯 Funil de Conversão")
+
+    col1, col2, col3 = st.columns(3)
+
+    # Calcular taxas do funil
+    lead_to_visit_rate = 0
+    visit_to_crm_rate = 0
+
+    if metrics['leads'] > 0:
+        lead_to_visit_rate = (metrics['visits_scheduled'] / metrics['leads']) * 100
+
+    if metrics['visits_scheduled'] > 0:
+        visit_to_crm_rate = (metrics['crm_converted'] / metrics['visits_scheduled']) * 100
+
+    with col1:
+        st.metric(
+            "Leads Gerados",
+            format_number(metrics['leads']),
+            help="Total de leads identificados pela IA"
+        )
+
+    with col2:
+        st.metric(
+            "Visitas Agendadas",
+            format_number(metrics['visits_scheduled']),
+            delta=f"{lead_to_visit_rate:.1f}% dos leads",
+            help="Leads que agendaram visita"
+        )
+
+    with col3:
+        st.metric(
+            "Conversões CRM",
+            format_number(metrics['crm_converted']),
+            delta=f"{visit_to_crm_rate:.1f}% das visitas",
+            help="Visitas que converteram em cliente"
+        )
 
 
 def render_leads_chart(leads_by_day):
@@ -284,14 +453,80 @@ def render_leads_chart(leads_by_day):
     st.bar_chart(leads_by_day.set_index('Data')['Leads'], use_container_width=True)
 
 
-def render_leads_table(df):
+def render_leads_by_inbox_chart(leads_by_inbox):
     """
-    Renderiza tabela de leads
+    Renderiza gráfico de leads por inbox
+
+    Args:
+        leads_by_inbox: DataFrame com leads agrupados por inbox
+    """
+    if leads_by_inbox.empty:
+        st.info("ℹ️ Nenhum lead para exibir no período selecionado")
+        return
+
+    st.subheader("📊 Leads por Inbox")
+    st.bar_chart(leads_by_inbox.set_index('Inbox')['Leads'], use_container_width=True)
+
+
+def render_score_distribution_chart(score_dist):
+    """
+    Renderiza gráfico de distribuição de score IA
+
+    Args:
+        score_dist: DataFrame com distribuição de scores
+    """
+    if score_dist.empty:
+        st.info("ℹ️ Nenhum lead com classificação para exibir")
+        return
+
+    st.subheader("🎯 Distribuição de Classificação IA")
+
+    # Usar colunas para melhor layout
+    col1, col2 = st.columns([2, 1])
+
+    with col1:
+        # Gráfico de barras horizontal
+        st.bar_chart(score_dist.set_index('Classificação')['Quantidade'], use_container_width=True)
+
+    with col2:
+        # Tabela resumo
+        st.write("**Resumo:**")
+        for _, row in score_dist.iterrows():
+            st.write(f"- **{row['Classificação']}**: {row['Quantidade']} leads")
+
+
+def render_leads_table(df, tenant_name, date_start, date_end):
+    """
+    Renderiza tabela de leads com botão de exportação
 
     Args:
         df: DataFrame com conversas
+        tenant_name: Nome do tenant (para nome do arquivo)
+        date_start: Data início (para nome do arquivo)
+        date_end: Data fim (para nome do arquivo)
     """
-    st.subheader("📋 Tabela de Leads")
+    # Header com botão de exportação
+    col1, col2 = st.columns([3, 1])
+
+    with col1:
+        st.subheader("📋 Tabela de Leads")
+
+    with col2:
+        # Botão de exportação CSV
+        csv_data = prepare_csv_export(df)
+        if csv_data:
+            # Gerar nome do arquivo
+            filename = f"leads_{tenant_name.lower().replace(' ', '_')}_{date_start.strftime('%Y%m%d')}_{date_end.strftime('%Y%m%d')}.csv"
+
+            st.download_button(
+                label="📥 Exportar CSV",
+                data=csv_data,
+                file_name=filename,
+                mime="text/csv",
+                use_container_width=True
+            )
+        else:
+            st.button("📥 Exportar CSV", disabled=True, use_container_width=True, help="Nenhum lead para exportar")
 
     # Filtrar apenas leads
     leads_df = df[df['is_lead'] == True].copy()
@@ -454,13 +689,29 @@ def show_client_dashboard(session, tenant_id=None):
     st.divider()
 
     # === GRÁFICOS ===
+    st.subheader("📊 Análise de Leads")
+
+    # Linha 1: Leads por dia (largura completa)
     leads_by_day = prepare_leads_by_day(df)
     render_leads_chart(leads_by_day)
 
     st.divider()
 
+    # Linha 2: Leads por inbox + Distribuição de Score (lado a lado)
+    col1, col2 = st.columns(2)
+
+    with col1:
+        leads_by_inbox = prepare_leads_by_inbox(df)
+        render_leads_by_inbox_chart(leads_by_inbox)
+
+    with col2:
+        score_dist = prepare_score_distribution(df)
+        render_score_distribution_chart(score_dist)
+
+    st.divider()
+
     # === TABELA DE LEADS ===
-    render_leads_table(df)
+    render_leads_table(df, tenant_name, date_start, date_end)
 
     st.divider()
 
