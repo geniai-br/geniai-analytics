@@ -129,15 +129,15 @@ class ConversationTransformer:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
                 df[col] = df[col].astype('Int64')  # Nullable integer type
 
-        # Converter floats
-        if 'agent_messages' in df.columns:
-            df['agent_messages'] = pd.to_numeric(df['agent_messages'], errors='coerce').fillna(0).astype(int)
+        # Converter floats/integers
+        if 'user_messages_count' in df.columns:
+            df['user_messages_count'] = pd.to_numeric(df['user_messages_count'], errors='coerce').fillna(0).astype(int)
 
-        if 'contact_messages' in df.columns:
-            df['contact_messages'] = pd.to_numeric(df['contact_messages'], errors='coerce').fillna(0).astype(int)
+        if 'contact_messages_count' in df.columns:
+            df['contact_messages_count'] = pd.to_numeric(df['contact_messages_count'], errors='coerce').fillna(0).astype(int)
 
-        if 'total_messages' in df.columns:
-            df['total_messages'] = pd.to_numeric(df['total_messages'], errors='coerce').fillna(0).astype(int)
+        if 't_messages' in df.columns:
+            df['t_messages'] = pd.to_numeric(df['t_messages'], errors='coerce').fillna(0).astype(int)
 
         if 'private_notes_count' in df.columns:
             df['private_notes_count'] = pd.to_numeric(df['private_notes_count'], errors='coerce').fillna(0).astype(int)
@@ -215,13 +215,6 @@ class ConversationTransformer:
                 pd.to_numeric(df['first_response_time_seconds'], errors='coerce') / 60.0
             ).round(1)
 
-        # Calcular user_messages_count e contact_messages_count se não existirem
-        if 'agent_messages' in df.columns and 'user_messages_count' not in df.columns:
-            df['user_messages_count'] = df['agent_messages']
-
-        if 'contact_messages' in df.columns and 'contact_messages_count' not in df.columns:
-            df['contact_messages_count'] = df['contact_messages']
-
         # Flags calculadas
         if 'user_messages_count' in df.columns and 'has_user_messages' not in df.columns:
             df['has_user_messages'] = df['user_messages_count'] > 0
@@ -236,17 +229,44 @@ class ConversationTransformer:
             df['has_contact_reply'] = df['contact_messages_count'] > 0
 
         # Calcular ratios
-        if 'user_messages_count' in df.columns and 'total_messages' in df.columns:
-            total = pd.to_numeric(df['total_messages'], errors='coerce').replace(0, np.nan)
+        if 'user_messages_count' in df.columns and 't_messages' in df.columns:
+            total = pd.to_numeric(df['t_messages'], errors='coerce').replace(0, np.nan)
             df['user_message_ratio'] = (
                 pd.to_numeric(df['user_messages_count'], errors='coerce') / total
             ).fillna(0).round(2)
 
-        if 'contact_messages_count' in df.columns and 'total_messages' in df.columns:
-            total = pd.to_numeric(df['total_messages'], errors='coerce').replace(0, np.nan)
+        if 'contact_messages_count' in df.columns and 't_messages' in df.columns:
+            total = pd.to_numeric(df['t_messages'], errors='coerce').replace(0, np.nan)
             df['contact_message_ratio'] = (
                 pd.to_numeric(df['contact_messages_count'], errors='coerce') / total
             ).fillna(0).round(2)
+
+        return df
+
+    def _rename_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Renomeia colunas para match com o schema do banco local.
+
+        Args:
+            df: DataFrame com dados transformados
+
+        Returns:
+            DataFrame com colunas renomeadas
+        """
+        # Renomear colunas conforme necessário
+        rename_map = {
+            'total_messages': 't_messages',  # Banco tem t_messages, não total_messages
+            'agent_messages': 'user_messages_count',  # Renomear para match
+            'contact_messages': 'contact_messages_count',  # Renomear para match
+            'status_label': 'status_label_pt'  # Renomear para match
+        }
+
+        # Renomear apenas as colunas que existem
+        columns_to_rename = {old: new for old, new in rename_map.items() if old in df.columns}
+
+        if columns_to_rename:
+            df = df.rename(columns=columns_to_rename)
+            logger.debug(f"Colunas renomeadas: {list(columns_to_rename.keys())}")
 
         return df
 

@@ -157,14 +157,14 @@ class RemoteExtractor:
                 account_name,
 
                 -- Métricas de mensagens
-                t_messages as total_messages,
-                user_messages_count as agent_messages,
-                contact_messages_count as contact_messages,
+                t_messages,
+                user_messages_count,
+                contact_messages_count,
                 private_notes_count,
 
                 -- Status e classificação
                 status,
-                status_label_pt as status_label,
+                status_label_pt,
                 priority,
                 priority_label,
 
