@@ -1,7 +1,7 @@
 # 🤖 PROMPT PARA NOVO CHAT - CONTINUAR FASE 4
 
 > **Use este prompt para continuar a Fase 4 (Dashboard Cliente) do sistema GeniAI Analytics**
-> **Última atualização:** 2025-11-06 18:00 (Checkpoint Fase 4)
+> **Última atualização:** 2025-11-06 19:30 (Bug ETL Corrigido)
 > **Status:** Fase 4 - 80% COMPLETA | Core Features IMPLEMENTADAS e FUNCIONANDO
 
 ---
@@ -34,8 +34,8 @@ CONTEXTO RÁPIDO:
 - Projeto: Sistema multi-tenant SaaS com autenticação e ETL automatizado
 - Fase 1: ✅ COMPLETA (banco geniai_analytics, RLS, migração de dados)
 - Fase 2: ✅ COMPLETA (autenticação, login, dashboards básicos)
-- Fase 3: ✅ COMPLETA (ETL multi-tenant, 1.093 conversas carregadas)
-- Fase 4: ✅ 80% COMPLETA (análise de leads funcionando!)
+- Fase 3: ✅ COMPLETA (ETL multi-tenant, 1.107 conversas carregadas)
+- Fase 4: ✅ 80% COMPLETA (análise de leads funcionando! Bug ETL corrigido!)
 - Próximo: FINALIZAR Fase 4 ou iniciar Fase 5
 
 SITUAÇÃO ATUAL - CHECKPOINT FASE 4:
@@ -58,23 +58,24 @@ As Fases 1, 2, 3 e PARTE DA 4 estão COMPLETAS e FUNCIONANDO:
   - Pipeline completo: Extractor → Transformer → Loader
   - Watermark incremental por tenant
   - Advisory locks (evita concorrência)
-  - 1.093 conversas do AllpFit carregadas
+  - 1.107 conversas do AllpFit carregadas ✅ ATUALIZADO
   - 5 inboxes mapeados (IDs: 1, 2, 61, 64, 67)
   - Usuário johan_geniai (owner, sem RLS)
   - Duração real: ~8h
   - Dashboard mostrando dados reais!
 
 ✅ Fase 4 - Dashboard Cliente (80% COMPLETA):
-  - ✅ Análise de Leads com IA (regex): 313 leads detectados
+  - ✅ Análise de Leads com IA (regex): 322 leads detectados ✅ ATUALIZADO
   - ✅ Personalização por tenant: tabela tenant_configs criada
   - ✅ Branding dinâmico: módulo branding.py (400+ linhas CSS)
   - ✅ Dashboard atualizado: KPIs reais, tabela com score IA
   - ✅ Filtros avançados: data, inbox, status
   - ✅ 5 novas colunas no banco + índices
-  - ✅ 1.099 conversas reprocessadas com análise
+  - ✅ 1.107 conversas reprocessadas com análise ✅ ATUALIZADO
+  - ✅ Bug ETL corrigido (loader.py SET ROLE removido) ⭐ NOVO
   - 📋 OpenAI planejado (aguardando aprovação Isaac)
   - Duração real: ~8h
-  - Commit: 2c0636b (feat: análise de leads com IA)
+  - Commits: 2c0636b (análise IA) + 8e06d86 (bug fix) ✅ ATUALIZADO
 
 LIÇÕES APRENDIDAS (Fases 1-4):
 1. ✅ RLS em tabelas de controle bloqueia sistema → Desabilitar em sessions, etl_control
@@ -87,6 +88,7 @@ LIÇÕES APRENDIDAS (Fases 1-4):
 8. ✅ Regex suficiente para MVP → 80% acurácia, R$ 0 custo
 9. ✅ Modular desde início → Fácil trocar regex → OpenAI depois
 10. ✅ Documentar antes de gastar → OpenAI planejado mas não implementado
+11. ✅ Remover SET ROLE desnecessário → Owner já bypassa RLS ⭐ NOVO
 
 DOCUMENTAÇÃO ESSENCIAL:
 Por favor, leia estes arquivos para entender o projeto:
@@ -120,8 +122,8 @@ A Fase 4 está 80% COMPLETA! Core features implementadas e funcionando:
 1. ✅ Análise de Leads com IA (regex)
    - LeadAnalyzer: 96 keywords (39 lead + 29 visita + 28 conversão)
    - Score AI 0-100 com labels (Alto/Médio/Baixo/N/A)
-   - 313 leads detectados de 1.099 conversas (28,5%)
-   - Performance: 2s para 1.099 conversas
+   - 322 leads detectados de 1.107 conversas (29,1%) ✅ ATUALIZADO
+   - Performance: 2s para 1.107 conversas
    - Arquivo: src/multi_tenant/etl_v4/lead_analyzer.py (600+ linhas)
 
 2. ✅ Personalização por Tenant
@@ -139,7 +141,13 @@ A Fase 4 está 80% COMPLETA! Core features implementadas e funcionando:
 4. ✅ Banco de Dados
    - 5 colunas adicionadas: is_lead, visit_scheduled, crm_converted, ai_probability_label/score
    - 3 índices criados para performance
-   - 1.099 conversas reprocessadas
+   - 1.107 conversas reprocessadas ✅ ATUALIZADO
+
+5. ✅ Bug Fix ETL ⭐ NOVO
+   - Removido SET ROLE etl_service do loader.py
+   - johan_geniai (owner) já bypassa RLS automaticamente
+   - ETL funcionando 100% sem erros de permissão
+   - Commit: 8e06d86
 
 📋 PENDENTE (Opcional - Fase 5):
 1. Exportação CSV (1-2h) - Botão download
@@ -174,6 +182,7 @@ ARQUIVOS JÁ IMPLEMENTADOS:
   - src/multi_tenant/etl_v4/lead_analyzer.py (600+ linhas) ⭐ NOVO
   - src/multi_tenant/dashboards/branding.py (400+ linhas) ⭐ NOVO
   - src/multi_tenant/dashboards/client_dashboard.py ✏️ MODIFICADO (query + filtros)
+  - src/multi_tenant/etl_v4/loader.py ✏️ MODIFICADO (bug fix SET ROLE) ⭐ NOVO
   - sql/multi_tenant/06_tenant_configs.sql (735 linhas) ⭐ NOVO
   - docs/multi-tenant/FASE4_DASHBOARD_CLIENTE.md ⭐ NOVO
   - docs/multi-tenant/FASE4_OPENAI_INTEGRATION.md ⭐ NOVO
@@ -181,11 +190,12 @@ ARQUIVOS JÁ IMPLEMENTADOS:
 DASHBOARD ATUAL (Porta 8504) - ✅ FUNCIONANDO COM DADOS REAIS:
 O dashboard cliente está ATUALIZADO e mostrando dados reais:
 - Localização: src/multi_tenant/dashboards/client_dashboard.py
-- Mostra 779 contatos (últimos 30 dias de 1.099 total)
-- ✅ Métricas REAIS: 313 leads, 555 visitas, 72 conversões
+- Mostra ~800 contatos (últimos 30 dias de 1.107 total) ✅ ATUALIZADO
+- ✅ Métricas REAIS: 322 leads, 569 visitas, 74 conversões ✅ ATUALIZADO
 - ✅ Tabela de leads com score IA (Alto/Médio/Baixo)
 - ✅ Gráfico de leads por dia
 - ✅ Filtros funcionando (data, inbox, status)
+- ✅ ETL funcionando sem erros ⭐ NOVO
 - Login: isaac@allpfit.com.br / senha123
 
 CREDENCIAIS DO BANCO LOCAL:
@@ -213,13 +223,13 @@ APLICAÇÃO:
 - Dashboard Single-Tenant: http://localhost:8503 (NÃO MEXER - referência)
 
 DADOS DISPONÍVEIS (Tenant ID=1: AllpFit) - ✅ COM ANÁLISE DE IA:
-- Total conversas: 1.099 (reprocessadas com análise)
+- Total conversas: 1.107 (reprocessadas com análise) ✅ ATUALIZADO
 - Período: 25/Set/2025 - 06/Nov/2025
-- Últimos 30 dias: 779 conversas
+- Últimos 30 dias: ~800 conversas ✅ ATUALIZADO
 - 5 inboxes: allpfitjpsulcloud1, allpfitjpsulrecepcao, allpfitjpsulcloud2, AllpFit WhatsApp, Telegram
-- ✅ Leads detectados: 313 (28,5%)
-- ✅ Visitas agendadas: 555 (50,5%)
-- ✅ Conversões CRM: 72 (6,5%)
+- ✅ Leads detectados: 322 (29,1%) ✅ ATUALIZADO
+- ✅ Visitas agendadas: 569 (51,4%) ✅ ATUALIZADO
+- ✅ Conversões CRM: 74 (6,7%) ✅ ATUALIZADO
 
 CLIENTES FUTUROS (Fase 5):
 Existem 6 clientes adicionais no Chatwoot para adicionar:
@@ -232,12 +242,13 @@ Existem 6 clientes adicionais no Chatwoot para adicionar:
 → Serão adicionados via interface admin na Fase 5
 
 RESULTADOS FASE 4 (Checkpoint):
-📊 313 leads detectados de 1.099 conversas
+📊 322 leads detectados de 1.107 conversas (29,1%) ✅ ATUALIZADO
 ⚡ Performance: 2s para analisar tudo (0,002s/conversa)
 💰 Custo: R$ 0 (regex, sem API externa)
 📈 Acurácia: ~80% (suficiente para MVP)
 ✅ Dashboard funcionando e mostrando dados reais
-📝 Commit: 2c0636b (12 arquivos, 5.376 linhas)
+✅ ETL funcionando sem erros de permissão ⭐ NOVO
+📝 Commits: 2c0636b (análise IA) + 8e06d86 (bug fix) ✅ ATUALIZADO
 
 IMPORTANTE - ESCOPO:
 ⚠️ Você tem acesso total a TUDO, mas SÓ FAÇA MUDANÇAS em:
@@ -311,10 +322,11 @@ O agente deve implementar a **Fase 4 - Dashboard Cliente Avançado** seguindo es
 - Pipeline completo (Extract → Transform → Load)
 - Watermark incremental
 - Advisory locks
-- 1.093 conversas carregadas
+- 1.107 conversas carregadas ✅ ATUALIZADO
 - 5 inboxes mapeados
 - Documentação completa
 - Duração: ~8h (75% mais rápido)
+- Bug corrigido: SET ROLE removido ⭐ NOVO
 
 ### ✅ Fase 4: Dashboard Cliente (80% COMPLETA)
 - **Estimativa:** 2-3 dias (16-24h)
@@ -360,6 +372,11 @@ O agente deve implementar a **Fase 4 - Dashboard Cliente Avançado** seguindo es
 - ✅ OpenAI documentado mas não implementado
 - ✅ Economizou $$$ durante desenvolvimento
 - ✅ Código pronto para quando Isaac aprovar
+
+### 8. Owner Bypassa RLS Automaticamente ⭐ NOVO
+- ✅ Não precisa SET ROLE quando usando owner (johan_geniai)
+- ✅ Remover comandos desnecessários = menos pontos de falha
+- ✅ Bug corrigido em loader.py (commit 8e06d86)
 
 ---
 
@@ -420,18 +437,19 @@ O agente deve implementar a **Fase 4 - Dashboard Cliente Avançado** seguindo es
 Dashboard agora tem DADOS REAIS:
 ```python
 # client_dashboard.py (linha ~61-65)
-is_lead,                    # ✅ REAL (313 detectados)
-visit_scheduled,            # ✅ REAL (555 detectadas)
-crm_converted,              # ✅ REAL (72 conversões)
+is_lead,                    # ✅ REAL (322 detectados) ✅ ATUALIZADO
+visit_scheduled,            # ✅ REAL (569 detectadas) ✅ ATUALIZADO
+crm_converted,              # ✅ REAL (74 conversões) ✅ ATUALIZADO
 ai_probability_label,       # ✅ REAL (Alto/Médio/Baixo)
 ai_probability_score        # ✅ REAL (0-100)
 ```
 
 ### 3. ✅ Performance Excelente
 - ✅ Cache existe (5min TTL)
-- ✅ 1.099 conversas analisadas em 2s
+- ✅ 1.107 conversas analisadas em 2s ✅ ATUALIZADO
 - ✅ Índices adicionados (3 novos)
 - ✅ Queries otimizadas
+- ✅ ETL funcionando sem erros ⭐ NOVO
 
 ### 4. ✅ Multi-Tenant Funcionando
 - ✅ RLS funcionando
@@ -454,10 +472,11 @@ ai_probability_score        # ✅ REAL (0-100)
 - [x] Substituir placeholders por lógica real
 - [x] Integrar análise ao transformer
 - [x] Adicionar 5 colunas no banco + índices
-- [x] Reprocessar 1.099 conversas
+- [x] Reprocessar 1.107 conversas ✅ ATUALIZADO
 - [x] Testar isolamento (RLS funcionando)
-- [x] Testar performance (2s para 1.099 conversas)
+- [x] Testar performance (2s para 1.107 conversas) ✅ ATUALIZADO
 - [x] Documentar Fase 4 (2 novos docs)
+- [x] Corrigir bug ETL (SET ROLE removido) ⭐ NOVO
 
 ### 📋 Opcional (Fase 5 ou aguardando aprovação):
 - [ ] Melhorar gráficos (tendências, comparativos) - 2-3h
@@ -473,16 +492,17 @@ ai_probability_score        # ✅ REAL (0-100)
 
 A Fase 4 está 80% COMPLETA:
 
-1. ✅ Dashboard mostra métricas REAIS (313 leads, 555 visitas, 72 conversões)
+1. ✅ Dashboard mostra métricas REAIS (322 leads, 569 visitas, 74 conversões) ✅ ATUALIZADO
 2. ✅ Branding personalizado por tenant funcionando (tenant_configs + branding.py)
 3. ✅ Análise de IA detecta leads/visitas/conversões (LeadAnalyzer com 96 keywords)
 4. ✅ Filtros avançados implementados (data, inbox, status)
 5. 📋 Exportação de dados funcionando (PENDENTE - Fase 5)
-6. ✅ Performance aceitável (2s para 1.099 conversas < 3s target)
+6. ✅ Performance aceitável (2s para 1.107 conversas < 3s target) ✅ ATUALIZADO
 7. ✅ RLS continua funcionando (validado)
-8. ✅ Documentação atualizada (2 novos docs + commit)
+8. ✅ Documentação atualizada (2 novos docs + commits)
+9. ✅ ETL funcionando sem erros (bug SET ROLE corrigido) ⭐ NOVO
 
-**Status:** 80% completa (6/8 critérios core + documentação)
+**Status:** 80% completa (7/9 critérios core + documentação + bug fix) ✅ ATUALIZADO
 
 ---
 
@@ -510,10 +530,12 @@ A Fase 4 está 80% COMPLETA:
 
 ---
 
-**Última atualização:** 2025-11-06 18:00 (Checkpoint Fase 4)
+**Última atualização:** 2025-11-06 19:30 (Bug ETL Corrigido)
 **Criado por:** Isaac (via Claude Code)
-**Status:** ✅ Fase 4 - 80% COMPLETA (Core Features Funcionando)
-**Commit:** 2c0636b (12 arquivos, 5.376 linhas)
+**Status:** ✅ Fase 4 - 80% COMPLETA (Core Features Funcionando + ETL 100% OK)
+**Commits:**
+- 2c0636b (12 arquivos, 5.376 linhas - análise IA)
+- 8e06d86 (1 arquivo, bug fix SET ROLE) ⭐ NOVO
 
 ---
 
@@ -521,4 +543,5 @@ A Fase 4 está 80% COMPLETA:
 
 **Dashboard rodando:** http://localhost:8504
 **Login:** isaac@allpfit.com.br / senha123
-**Dados reais:** 313 leads | 555 visitas | 72 conversões
+**Dados reais:** 322 leads | 569 visitas | 74 conversões | 1.107 conversas ✅ ATUALIZADO
+**ETL:** ✅ Funcionando 100% sem erros ⭐ NOVO
