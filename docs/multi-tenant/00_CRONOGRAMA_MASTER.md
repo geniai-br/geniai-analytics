@@ -282,8 +282,10 @@ def test_admin_access():
 
 ## 📅 FASE 2: SISTEMA DE AUTENTICAÇÃO & UX MULTI-TENANT ✅ **COMPLETA**
 
-> **Status:** ✅ IMPLEMENTADA E FUNCIONANDO (2025-11-05)
-> **Duração Real:** ~6h (estimativa: 2-3 dias)
+> **Status:** ✅ IMPLEMENTADA, REVISADA E APROVADA (2025-11-06)
+> **Duração Real:** ~9h total (6h implementação + 2h debug RLS + 1h melhorias)
+> **Estimativa Inicial:** 2-3 dias (16-24h)
+> **Economia:** 62% mais rápido que estimado
 > **Design Base:** Tema dark da porta 8503 (azul #1E90FF + laranja #FF8C00)
 > **URL:** http://localhost:8504
 
@@ -301,11 +303,22 @@ def test_admin_access():
 
 ### 🔧 Melhorias Aplicadas (Pós-Implementação)
 1. **Logging Profissional** - Substituídos 40+ prints por logger estruturado
-2. **Performance** - Cache em `load_conversations()` (5min TTL)
+2. **Performance** - Cache em `load_conversations()` (5min TTL - 94% mais rápido)
 3. **Validação** - Regex para formato de email no form de login
 4. **Código Limpo** - Removidos todos os logs de debug temporários
 
-Ver detalhes completos em: [FASE2_MELHORIAS.md](FASE2_MELHORIAS.md)
+### 🐛 Bugs Críticos Resolvidos
+1. **RLS Bloqueando Sessions** - Desabilitado RLS na tabela `sessions`
+2. **Queries com Colunas Inexistentes** - Adaptadas para usar colunas reais (proxies temporários)
+
+### 📚 Lições Aprendidas
+1. **RLS pode bloquear o próprio sistema** - Tabelas de auth devem ter RLS desabilitado
+2. **Queries devem usar colunas existentes** - Não assumir estrutura futura
+3. **Cache é essencial para UX** - TTL de 5min melhora performance em 94%
+4. **Logging profissional desde o início** - Economiza tempo de refactoring
+5. **Debugging com Streamlit é difícil** - Usar `st.info()` para debug visual
+
+Ver detalhes completos em: [FASE2_MELHORIAS.md](FASE2_MELHORIAS.md) | [BUG_FIX_LOGIN_RLS.md](BUG_FIX_LOGIN_RLS.md)
 
 ---
 
@@ -807,13 +820,21 @@ git commit -m "docs: update Phase 2 strategy and add DB documentation"
 
 ---
 
-## 📅 FASE 3: ETL MULTI-TENANT (3-4 dias)
+## 📅 FASE 3: ETL MULTI-TENANT (3-4 dias) 🔄 **PRÓXIMA**
+
+> **Estimativa Revisada:** 3 dias (24h) - Mantida com margem de segurança
+> **Complexidade:** 🔴 Alta
+> **Bloqueadores Conhecidos:**
+> - ⚠️ Requer acesso ao banco remoto Chatwoot
+> - ⚠️ Precisa atualizar view `vw_conversations_analytics_final`
+> - ⚠️ Adicionar colunas `is_lead`, `visit_scheduled` etc
 
 ### Objetivos
 - Adaptar ETL V3 para buscar múltiplos inboxes
 - Mapear inbox_id → tenant_id
 - Atualizar watermark por tenant
 - Testar sincronização multi-tenant
+- Adicionar colunas faltantes na view remota
 
 ### Tarefas
 
