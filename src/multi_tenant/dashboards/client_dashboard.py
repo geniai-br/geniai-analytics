@@ -364,6 +364,8 @@ def show_client_dashboard(session, tenant_id=None):
         display_tenant_id = session['tenant_id']
         tenant_name = session['tenant_name']
         show_back_button = False
+        # Buscar info do tenant para exibir no expander
+        tenant_info = get_tenant_info(display_tenant_id)
 
     # Configurar RLS para o tenant correto
     engine = get_database_engine()
