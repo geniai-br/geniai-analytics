@@ -129,7 +129,7 @@ CREATE TABLE tenant_configs (
 
 ## 🔮 PRÓXIMOS PASSOS (Pós-Checkpoint)
 
-### 📋 **Opcional (Fase 5):**
+### 📋 **Pendente (Fase 5):**
 
 1. **Exportação CSV** (1-2h)
    - Botão "Baixar Dados"
@@ -140,15 +140,6 @@ CREATE TABLE tenant_configs (
    - Tendências ao longo do tempo
    - Comparativo mês a mês
    - Funil de conversão (leads → visitas → CRM)
-   - Gráfico de sentimento (se usar OpenAI)
-
-3. **Integração OpenAI** (4-6h) ⭐ **DOCUMENTADO**
-   - Ver: [`FASE4_OPENAI_INTEGRATION.md`](FASE4_OPENAI_INTEGRATION.md)
-   - Aumentar acurácia de 80% → 95%
-   - Análise de sentimento
-   - Extração de entidades (datas, nomes)
-   - Custo: ~R$ 9/ano (muito barato!)
-   - **Aguardando aprovação de Isaac**
 
 ---
 
@@ -320,14 +311,36 @@ ORDER BY conversation_date DESC;
 
 ---
 
+## 🚀 EVOLUÇÕES FUTURAS (Pós-Lançamento)
+
+### 🤖 **Integração OpenAI (Opcional)**
+
+> **Quando:** Após sistema completo (Fase 6+)
+> **Documentação:** [FASE4_OPENAI_INTEGRATION.md](FASE4_OPENAI_INTEGRATION.md)
+> **Status:** Planejado, aguardando aprovação de Isaac
+
+**Contexto:**
+- Sistema atual usa **regex** (80% acurácia, R$ 0 custo) ✅ **SUFICIENTE PARA MVP**
+- OpenAI seria uma **evolução opcional** após validação do sistema
+- Benefícios: 80% → 95% acurácia, análise de sentimento, entidades
+- Custo: ~R$ 9/ano (muito barato)
+- Requer aprovação: dados enviados para API externa
+
+**Decisão:**
+- ✅ Usar regex agora (sistema funcionando, custo zero)
+- ✅ Validar sistema completo com Isaac primeiro
+- ✅ Avaliar necessidade de OpenAI após uso real
+- ✅ Código já documentado e pronto (implementação 4-6h)
+
+---
+
 ## 📞 CONTATOS
 
 - **Implementação:** Isaac (via Claude Code)
-- **Aprovação OpenAI:** Aguardando Isaac
 - **Suporte:** Documentação completa nos arquivos acima
 
 ---
 
-**Última atualização:** 2025-11-06 18:00 (Checkpoint Fase 4)
+**Última atualização:** 2025-11-06 19:45 (Documentação reorganizada)
 **Status:** ✅ Core Features COMPLETAS e FUNCIONANDO
-**Próximo:** Commit de checkpoint + Apresentar para Isaac
+**Próximo:** Fase 5 (Dashboard Admin) ou melhorias incrementais

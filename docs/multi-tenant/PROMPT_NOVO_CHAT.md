@@ -149,18 +149,22 @@ A Fase 4 está 80% COMPLETA! Core features implementadas e funcionando:
    - ETL funcionando 100% sem erros de permissão
    - Commit: 8e06d86
 
-📋 PENDENTE (Opcional - Fase 5):
+📋 PENDENTE (Fase 5):
 1. Exportação CSV (1-2h) - Botão download
 2. Gráficos melhorados (2-3h) - Tendências, comparativos
-3. Integração OpenAI (4-6h) - Aguardando aprovação Isaac
-   - Código já documentado em FASE4_OPENAI_INTEGRATION.md
-   - Custo: ~R$ 9/ano (GPT-4o-mini)
-   - Acurácia: 80% → 95%
+3. Dashboard Admin completo - Gerenciar tenants
+
+🤖 EVOLUÇÃO FUTURA (Pós-Lançamento):
+- **OpenAI Integration** - Evolução OPCIONAL após sistema completo (Fase 6+)
+  - Documentado em FASE4_OPENAI_INTEGRATION.md
+  - Custo: ~R$ 9/ano (GPT-4o-mini)
+  - Acurácia: 80% → 95%
+  - Requer: Sistema validado + aprovação Isaac
+  - **Regex atual (80%, R$ 0) é SUFICIENTE para MVP** ✅
 
 🎯 DECISÃO NECESSÁRIA:
-- Continuar Fase 4 (exportação CSV + gráficos)?
-- Aguardar aprovação OpenAI de Isaac?
-- Iniciar Fase 5 (Dashboard Admin)?
+- Continuar Fase 4 (exportação CSV + gráficos)? ⏱️ 3-4h
+- Iniciar Fase 5 (Dashboard Admin)? ⏱️ 2-3 dias
 
 ARQUIVOS JÁ IMPLEMENTADOS:
 
