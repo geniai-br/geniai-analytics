@@ -1,8 +1,8 @@
-# 🤖 PROMPT PARA NOVO CHAT - IMPLEMENTAÇÃO FASE 3
+# 🤖 PROMPT PARA NOVO CHAT - IMPLEMENTAÇÃO FASE 4
 
-> **Use este prompt para iniciar um novo chat e implementar a Fase 3 (ETL Multi-Tenant)**
-> **Última atualização:** 2025-11-06 (pós-revisão Fase 2)
-> **Status:** Fase 2 COMPLETA E REVISADA - Pronto para iniciar Fase 3
+> **Use este prompt para iniciar um novo chat e implementar a Fase 4 (Dashboard Cliente)**
+> **Última atualização:** 2025-11-06 (pós-conclusão Fase 3)
+> **Status:** Fase 3 COMPLETA E VALIDADA - Pronto para iniciar Fase 4
 
 ---
 
@@ -28,208 +28,208 @@
 ## 📋 PROMPT PARA COPIAR E COLAR
 
 ```
-Olá! Preciso implementar a FASE 3 (ETL Multi-Tenant) do sistema GeniAI Analytics.
+Olá! Preciso implementar a FASE 4 (Dashboard Cliente) do sistema GeniAI Analytics.
 
 CONTEXTO RÁPIDO:
-- Projeto: Sistema multi-tenant com autenticação e dashboards diferenciados por role
+- Projeto: Sistema multi-tenant SaaS com autenticação e ETL automatizado
 - Fase 1: ✅ COMPLETA (banco geniai_analytics, RLS, migração de dados)
-- Fase 2: ✅ COMPLETA E REVISADA (autenticação, login, dashboards)
-- Próximo: FASE 3 - ETL Multi-Tenant
+- Fase 2: ✅ COMPLETA (autenticação, login, dashboards básicos)
+- Fase 3: ✅ COMPLETA (ETL multi-tenant, 1.093 conversas carregadas)
+- Próximo: FASE 4 - Dashboard Cliente Avançado
 
 SITUAÇÃO ATUAL:
-As Fases 1 e 2 estão COMPLETAS e FUNCIONANDO:
-✅ Banco geniai_analytics criado (9 tabelas com RLS)
-✅ 4 usuários cadastrados (2 tenants: GeniAI Admin + AllpFit)
-✅ Login funcionando (http://localhost:8504)
-✅ Autenticação com bcrypt + sessões persistidas
-✅ Router inteligente (admin → painel, cliente → dashboard)
-✅ Dashboards diferenciados por role
-✅ Performance otimizada (cache 5min, 94% mais rápido)
-✅ Código limpo e bem documentado
+As Fases 1, 2 e 3 estão COMPLETAS e FUNCIONANDO:
 
-LIÇÕES APRENDIDAS (Fase 2):
-1. ✅ RLS pode bloquear o próprio sistema → Desabilitar em tabelas de controle
-2. ✅ Queries devem usar colunas existentes → Verificar schema antes
-3. ✅ Cache é essencial para UX → TTL de 5min melhora 94%
-4. ✅ Logging profissional desde o início → Economiza refactoring
-5. ✅ Debugging com Streamlit é difícil → Usar st.info() para debug visual
+✅ Fase 1 - Banco de Dados:
+  - geniai_analytics criado (9 tabelas com RLS)
+  - 2 tenants: GeniAI Admin (id=0) + AllpFit (id=1)
+  - 4 usuários cadastrados
+  - RLS funcionando corretamente
 
-DOCUMENTAÇÃO PARA LER:
-Por favor, leia estes arquivos para entender o projeto e a Fase 3:
+✅ Fase 2 - Autenticação:
+  - Login funcionando (http://localhost:8504)
+  - Autenticação bcrypt + sessões persistidas
+  - Router inteligente (admin → painel, cliente → dashboard)
+  - Performance otimizada (cache 5min)
+  - Duração real: ~9h
+
+✅ Fase 3 - ETL Multi-Tenant:
+  - Pipeline completo: Extractor → Transformer → Loader
+  - Watermark incremental por tenant
+  - Advisory locks (evita concorrência)
+  - 1.093 conversas do AllpFit carregadas
+  - 5 inboxes mapeados (IDs: 1, 2, 61, 64, 67)
+  - Usuário johan_geniai (owner, sem RLS)
+  - Duração real: ~8h
+  - Dashboard mostrando dados reais!
+
+LIÇÕES APRENDIDAS (Fases 1-3):
+1. ✅ RLS em tabelas de controle bloqueia sistema → Desabilitar em sessions, etl_control
+2. ✅ Verificar schema antes de assumir colunas → view remota tem 95 colunas
+3. ✅ Owner bypass RLS → johan_geniai para ETL, isaac para dashboard
+4. ✅ Chunked processing → Evita memory errors (default 50 rows)
+5. ✅ Logging profissional desde o início → Economiza refactoring
+6. ✅ Cache é essencial → TTL 5min melhora 94%
+7. ✅ Documentação completa → REMOTE_DATABASE.md salvou tempo
+
+DOCUMENTAÇÃO ESSENCIAL:
+Por favor, leia estes arquivos para entender o projeto:
 
 1. 📚 docs/multi-tenant/00_CRONOGRAMA_MASTER.md
-   → Cronograma completo (Fase 2 COMPLETA, Fase 3 detalhada)
+   → Cronograma completo (3 fases completas, Fase 4 detalhada)
 
-2. 🚀 docs/multi-tenant/RECOMENDACOES_FASE3.md ⭐ IMPORTANTE!
-   → Guia completo para Fase 3 com lições aprendidas da Fase 2
-
-3. 🗄️ docs/multi-tenant/DB_DOCUMENTATION.md
+2. 🗄️ docs/multi-tenant/DB_DOCUMENTATION.md
    → Banco de dados, credenciais, tabelas, RLS
 
-4. 🔧 docs/multi-tenant/FASE2_MELHORIAS.md
-   → Melhorias aplicadas na Fase 2 (logging, cache, validação)
+3. 🚀 docs/multi-tenant/FASE3_ETL_MULTI_TENANT.md
+   → Arquitetura completa do ETL implementado
 
-5. 🐛 docs/multi-tenant/BUG_FIX_LOGIN_RLS.md
-   → Bug de RLS resolvido (importante para entender RLS)
+4. 🌐 docs/multi-tenant/REMOTE_DATABASE.md
+   → Schema do banco remoto Chatwoot (95 colunas documentadas)
 
-ARQUIVOS JÁ IMPLEMENTADOS (Fase 1 e 2):
-✅ Fase 1: Banco de dados (9 tabelas, RLS, seed data)
-✅ Fase 2: Autenticação completa (6 arquivos em src/multi_tenant/)
+5. 👥 docs/multi-tenant/README_USUARIOS.md
+   → Guia de usuários do banco (johan_geniai vs isaac)
 
-TAREFAS PARA ESTE CHAT (FASE 3):
-1. 🔍 Análise da View Remota
-   - Conectar ao banco remoto Chatwoot
-   - Verificar colunas disponíveis em vw_conversations_analytics_final
-   - Documentar schema e diferenças
+TAREFAS PARA ESTE CHAT (FASE 4):
 
-2. 🗺️ Criar Inbox Tenant Mapping
-   - Mapear inbox_ids do AllpFit (tenant_id=1)
-   - Popular tabela inbox_tenant_mapping
+A Fase 4 foca em melhorar o dashboard do CLIENTE (não o admin).
+Objetivos conforme cronograma:
+- Adaptar dashboard atual para multi-tenant
+- Filtrar dados automaticamente pelo tenant logado
+- Personalização por cliente (logo, cores, nome)
+- Métricas específicas do cliente
 
-3. 📥 Implementar Extractor Multi-Tenant
-   - Buscar dados de múltiplos inboxes
-   - Filtrar por watermark
-   - Processar em chunks (evitar memory error)
+IMPLEMENTAÇÕES SUGERIDAS:
 
-4. 🔄 Implementar Transformer
-   - Normalizar dados
-   - Adicionar tenant_id
-   - Mapear colunas
+1. 🎨 Personalização Visual
+   - Tabela tenant_configs (logo_url, primary_color, secondary_color)
+   - Aplicar branding dinâmico por tenant
+   - Header personalizado com logo do cliente
 
-5. 💾 Implementar Loader (UPSERT)
-   - Inserir/atualizar dados em conversations_analytics
-   - Garantir idempotência
+2. 📊 Métricas Avançadas
+   - Atualmente: Placeholders (is_lead, visit_scheduled, crm_converted = FALSE)
+   - Implementar análise de texto para detectar leads
+   - Keywords para classificar visitas agendadas
+   - Detecção de conversões CRM
 
-6. ⏱️ Implementar Watermark Manager
-   - Controle de sincronização por tenant
-   - Advisory locks (evitar execução simultânea)
+3. 📈 Visualizações Aprimoradas
+   - Gráficos mais complexos (tendências, comparativos)
+   - Filtros avançados (período, inbox, status)
+   - Exportação de dados (CSV, Excel)
 
-7. 🎯 Pipeline Unificado
-   - Orquestrar Extract → Transform → Load
-   - Logging estruturado desde o início
-   - Tratamento de erros robusto
+4. ⚡ Performance
+   - Otimizar queries (já existe cache de 5min)
+   - Índices adicionais se necessário
+   - Lazy loading para tabelas grandes
 
-8. 🧪 Testes
-   - Testar extração de 1 inbox
-   - Testar pipeline completo
-   - Validar dados no dashboard (Fase 2)
+ARQUIVOS JÁ IMPLEMENTADOS:
+
+✅ Fase 1 (Banco):
+  - sql/multi_tenant/*.sql (9 tabelas)
+
+✅ Fase 2 (Auth):
+  - src/multi_tenant/auth/ (auth.py, middleware.py)
+  - src/multi_tenant/dashboards/ (login_page.py, admin_panel.py, client_dashboard.py, app.py)
+
+✅ Fase 3 (ETL):
+  - src/multi_tenant/etl_v4/extractor.py (350+ linhas)
+  - src/multi_tenant/etl_v4/transformer.py (400+ linhas)
+  - src/multi_tenant/etl_v4/loader.py (369 linhas)
+  - src/multi_tenant/etl_v4/watermark_manager.py (483 linhas)
+  - src/multi_tenant/etl_v4/pipeline.py (481 linhas)
+
+DASHBOARD ATUAL (Porta 8504):
+O dashboard cliente JÁ EXISTE mas tem placeholders:
+- Localização: src/multi_tenant/dashboards/client_dashboard.py
+- Mostra 773 contatos (últimos 30 dias de 1.093 total)
+- Métricas em 0: leads, visitas agendadas, conversões (placeholders Fase 3)
+- Próximo passo: Implementar lógica real para essas métricas
 
 CREDENCIAIS DO BANCO LOCAL:
 - Host: localhost
 - Database: geniai_analytics
-- User: isaac
-- Password: AllpFit2024@Analytics
-- User alternativo: integracao_user
+- User ETL: johan_geniai (owner, sem RLS)
 - Password: vlVMVM6UNz2yYSBlzodPjQvZh
+- User Dashboard: isaac (com RLS)
+- Password: AllpFit2024@Analytics
 
 CREDENCIAIS DO BANCO REMOTO (Chatwoot):
-✅ CONFIRMADAS:
-- Host: 178.156.206.184
-- Port: 5432
-- Database: banco-chatwoot
-- Schema: public
+- Host: 178.156.206.184:5432
+- Database: chatwoot
 - User: hetzner_hyago_read
 - Password: c1d46b41391f
-- View: vw_conversations_analytics_final (CONFIRMADA)
+- View: vw_conversations_analytics_final (95 colunas)
 
 USUÁRIOS DE TESTE (senha: senha123):
 - admin@geniai.com.br (super_admin, tenant_id=0)
 - isaac@allpfit.com.br (admin, tenant_id=1)
 - visualizador@allpfit.com.br (client, tenant_id=1)
 
-APLICAÇÃO MULTI-TENANT:
-- URL: http://localhost:8504
-- Status: ✅ FUNCIONANDO (Fase 2 completa)
-- Dashboard single-tenant (porta 8503): NÃO MEXER
+APLICAÇÃO:
+- URL Multi-Tenant: http://localhost:8504 ✅ FUNCIONANDO
+- Dashboard Single-Tenant: http://localhost:8503 (NÃO MEXER - referência)
 
-IMPORTANTE - ESCOPO DE MUDANÇAS:
+DADOS DISPONÍVEIS (Tenant ID=1: AllpFit):
+- Total conversas: 1.093
+- Período: 25/Set/2025 - 06/Nov/2025
+- Últimos 30 dias: 773 conversas
+- 5 inboxes: allpfitjpsulcloud1, allpfitjpsulrecepcao, allpfitjpsulcloud2, AllpFit WhatsApp, Telegram
+
+CLIENTES FUTUROS (Fase 5):
+Existem 6 clientes adicionais no Chatwoot para adicionar:
+- CDT Mossoró (592 conversas)
+- CDT JP Sul (262 conversas)
+- CDT Viamao (247 conversas)
+- Gestao GeniAI (14 conversas)
+- InvestBem (11 conversas)
+- CDT Tubarão SC (2 conversas)
+→ Serão adicionados via interface admin na Fase 5
+
+IMPORTANTE - ESCOPO:
 ⚠️ Você tem acesso total a TUDO, mas SÓ FAÇA MUDANÇAS em:
    /home/tester/projetos/allpfit-analytics/
 
-BLOQUEADORES CONHECIDOS:
-✅ RESOLVIDO: Credenciais do banco remoto confirmadas!
-⚠️ Ainda precisa verificar:
-1. ✅ Acesso ao banco remoto Chatwoot (credenciais CONFIRMADAS)
-2. ⚠️ View vw_conversations_analytics_final existe? (VERIFICAR)
-3. ⚠️ View possui colunas necessárias (is_lead, visit_scheduled, etc)? (VERIFICAR)
-4. ⚠️ Inbox IDs do AllpFit (tenant_id=1) - DESCOBRIR
-
-RECOMENDAÇÕES IMPORTANTES (da Fase 2):
-1. ✅ Use logging estruturado desde o início (import logging)
-2. ✅ Não assuma estrutura do banco (verificar colunas antes)
-3. ✅ Desabilitar RLS em tabelas de controle (etl_control, inbox_tenant_mapping)
-4. ✅ Implementar testes incrementais (não esperar tudo funcionar de uma vez)
-5. ✅ Usar cache para metadados (inbox_tenant_mapping)
-6. ✅ Advisory locks para evitar execução simultânea
-7. ✅ Processar dados em chunks (evitar memory error)
-
-Pronto para implementar a Fase 3 (ETL Multi-Tenant)?
+Pronto para implementar a Fase 4 (Dashboard Cliente)?
 ```
 
 ---
 
 ## 🎯 O QUE O PRÓXIMO AGENTE VAI FAZER
 
-O agente deve implementar a **Fase 3 - ETL Multi-Tenant** seguindo este fluxo:
+O agente deve implementar a **Fase 4 - Dashboard Cliente Avançado** seguindo este fluxo:
 
-### Dia 1: Setup e Análise (4-6h)
-1. **Verificar Acesso Remoto** ✅ CREDENCIAIS CONFIRMADAS
-   - ✅ Credenciais do banco Chatwoot obtidas
-   - Host: 178.156.206.184:5432
-   - DB: banco-chatwoot | User: hetzner_hyago_read | Pass: c1d46b41391f
-   - [ ] Testar conexão remota
-   - [ ] Verificar latência
+### Opção A: Melhorias Incrementais (Recomendado)
+1. **Criar Tabela de Configurações** (2-3h)
+   - `tenant_configs` (logo, cores, CSS customizado)
+   - Aplicar branding dinâmico
+   - Testar com AllpFit
 
-2. **Analisar View Remota**
-   - [ ] Verificar se `vw_conversations_analytics_final` existe
-   - [ ] Listar todas as colunas disponíveis
-   - [ ] Documentar schema (criar REMOTE_DATABASE.md)
-   - [ ] Verificar se possui colunas necessárias
+2. **Implementar Análise de IA** (4-6h)
+   - Detectar leads via keywords no texto
+   - Classificar visitas agendadas
+   - Detectar conversões CRM
+   - Substituir placeholders FALSE por lógica real
 
-3. **Criar Inbox Mapping**
-   - [ ] Identificar inbox_ids do AllpFit
-   - [ ] Popular tabela `inbox_tenant_mapping`
-   - [ ] Desabilitar RLS nesta tabela
+3. **Melhorar Visualizações** (3-4h)
+   - Gráficos de tendências
+   - Filtros avançados
+   - Exportação CSV/Excel
 
-### Dia 2: Implementação Core (6-8h)
-4. **Implementar Extractor**
-   - `src/multi_tenant/etl_v4/extractor.py`
-   - Buscar dados de múltiplos inboxes
-   - Filtrar por watermark
-   - Processar em chunks
+4. **Testes de Isolamento** (1-2h)
+   - Validar RLS funciona
+   - Múltiplos usuários do mesmo tenant
+   - Performance com dados reais
 
-5. **Implementar Transformer**
-   - `src/multi_tenant/etl_v4/transformer.py`
-   - Normalizar dados
-   - Adicionar tenant_id
+### Opção B: Foco em IA (Alternativo)
+1. **Análise de Texto com IA** (6-8h)
+   - Implementar NLP para detectar leads
+   - Classificação de intenções
+   - Score de qualificação
 
-6. **Implementar Loader**
-   - `src/multi_tenant/etl_v4/loader.py`
-   - UPSERT em conversations_analytics
-   - Garantir idempotência
-
-7. **Implementar Watermark Manager**
-   - `src/multi_tenant/etl_v4/watermark_manager.py`
-   - Advisory locks
-   - Controle por tenant
-
-### Dia 3: Pipeline e Testes (6-8h)
-8. **Pipeline Unificado**
-   - `src/multi_tenant/etl_v4/pipeline.py`
-   - Orquestrar Extract → Transform → Load
-   - Logging estruturado
-   - Tratamento de erros
-
-9. **Testes**
-   - Testar extração de 1 inbox
-   - Testar pipeline completo
-   - Executar ETL para AllpFit
-   - Validar dados no dashboard
-
-10. **Documentação**
-    - Criar FASE3_IMPLEMENTACAO.md
-    - Documentar bugs encontrados
-    - Atualizar cronograma
+2. **Dashboard de Insights** (4-6h)
+   - Palavras-chave mais comuns
+   - Análise de sentimento
+   - Recomendações automáticas
 
 ---
 
@@ -237,217 +237,182 @@ O agente deve implementar a **Fase 3 - ETL Multi-Tenant** seguindo este fluxo:
 
 ### ✅ Fase 1: Banco de Dados (COMPLETA)
 - 9 tabelas criadas com RLS
-- 4 usuários cadastrados
 - 2 tenants (GeniAI Admin + AllpFit)
-- RLS funcionando (exceto sessions - desabilitado intencionalmente)
+- 4 usuários cadastrados
 - Índices otimizados
-- Documentação completa (DB_DOCUMENTATION.md)
 
-### ✅ Fase 2: Autenticação & UX (COMPLETA E REVISADA)
-- Login funcionando (http://localhost:8504)
-- Autenticação bcrypt + sessões persistidas
-- Router inteligente (admin → painel, cliente → dashboard)
-- Dashboards diferenciados por role
-- Performance otimizada (cache 5min, 94% mais rápido)
-- Logging profissional (40+ prints → logger)
-- Validação de email
-- Código limpo e documentado
-- **Duração real:** 9h (62% mais rápido que estimado)
+### ✅ Fase 2: Autenticação (COMPLETA)
+- Login funcionando
+- Router inteligente
+- Cache 5min (94% mais rápido)
+- Código limpo
+- Duração: ~9h (62% mais rápido)
 
-### 🔄 Fase 3: ETL Multi-Tenant (ATUAL - A IMPLEMENTAR)
-- **Estimativa:** 3 dias (24h)
-- **Complexidade:** 🔴 Alta
-- **Documento de Apoio:** RECOMENDACOES_FASE3.md
+### ✅ Fase 3: ETL Multi-Tenant (COMPLETA)
+- Pipeline completo (Extract → Transform → Load)
+- Watermark incremental
+- Advisory locks
+- 1.093 conversas carregadas
+- 5 inboxes mapeados
+- Documentação completa
+- Duração: ~8h (75% mais rápido)
+
+### 🔄 Fase 4: Dashboard Cliente (ATUAL - A IMPLEMENTAR)
+- **Estimativa:** 2-3 dias (16-24h)
+- **Complexidade:** 🟡 Média
 - **Status:** Pronto para iniciar
+- **Dashboard atual:** Funcional mas com placeholders
 
 ---
 
-## 🎓 LIÇÕES APRENDIDAS (FASE 2) - APLICAR NA FASE 3
+## 🎓 LIÇÕES APRENDIDAS (FASES 1-3) - APLICAR NA FASE 4
 
-### 1. Logging Profissional Desde o Início ⭐
-- ✅ Usar `import logging` desde o primeiro arquivo
+### 1. Verificar Schema Antes de Assumir ⭐
+- ✅ Fase 3: view remota tinha nomes diferentes (t_messages vs total_messages)
+- ✅ Sempre consultar `\d table_name` ou `INFORMATION_SCHEMA`
+
+### 2. RLS em Tabelas Corretas ⭐
+- ✅ Dados: RLS habilitado (conversations_analytics, users, tenants)
+- ❌ Controle: RLS desabilitado (sessions, etl_control, inbox_tenant_mapping)
+
+### 3. Separação de Usuários ⭐
+- ✅ johan_geniai (owner): ETL sem RLS
+- ✅ isaac (authenticated_users): Dashboard com RLS
+
+### 4. Performance é Crítica ⭐
+- ✅ Cache TTL 5min → 94% mais rápido
+- ✅ Índices em colunas filtradas (tenant_id, conversation_date)
+- ✅ Chunked processing (evita memory error)
+
+### 5. Logging Profissional ⭐
 - ✅ Não usar `print()` para debug
-- ✅ Níveis: INFO (eventos), WARNING (suspeito), ERROR (falhas)
-
-### 2. Não Assumir Estrutura do Banco ⭐
-- ✅ Sempre verificar colunas disponíveis ANTES de usar
-- ✅ Criar script `verify_remote_schema.py`
-- ✅ Documentar diferenças entre esperado vs. real
-
-### 3. RLS em Tabelas de Controle ⭐
-- ✅ Desabilitar RLS em `etl_control` e `inbox_tenant_mapping`
-- ✅ ETL precisa acessar dados de TODOS os tenants
-- ⚠️ Não cometer o mesmo erro da Fase 2 (RLS bloqueou sessions)
-
-### 4. Testes Incrementais ⭐
-- ✅ Testar cada módulo separadamente
-- ✅ Não esperar tudo funcionar de uma vez
-- ✅ Criar testes unitários desde o início
-
-### 5. Performance e Segurança ⭐
-- ✅ Usar cache para metadados (TTL 1h)
-- ✅ Advisory locks para evitar execução simultânea
-- ✅ Processar dados em chunks (evitar memory error)
-- ✅ Connection pooling otimizado
+- ✅ Usar `import logging` desde o início
+- ✅ Níveis: INFO, WARNING, ERROR
 
 ---
 
-## 📂 ESTRUTURA DE ARQUIVOS (Fase 1 e 2 Completas, Fase 3 a Criar)
+## 📂 ESTRUTURA DE ARQUIVOS (Fases 1-3 Completas, Fase 4 a Implementar)
 
 ```
 /home/tester/projetos/allpfit-analytics/
 ├── docs/multi-tenant/
-│   ├── 00_CRONOGRAMA_MASTER.md          ✅ Atualizado (Fase 2 completa)
+│   ├── 00_CRONOGRAMA_MASTER.md          ✅ Fase 3 completa
 │   ├── DB_DOCUMENTATION.md              ✅ Banco documentado
-│   ├── 02_UX_FLOW.md                    ✅ Fluxos de UX
-│   ├── FASE2_MELHORIAS.md               ✅ Melhorias aplicadas
-│   ├── BUG_FIX_LOGIN_RLS.md             ✅ Bug de RLS documentado
-│   ├── RECOMENDACOES_FASE3.md           ✅ Guia para Fase 3 ⭐
+│   ├── FASE2_MELHORIAS.md               ✅ Melhorias Fase 2
+│   ├── FASE3_ETL_MULTI_TENANT.md        ✅ Arquitetura ETL
+│   ├── REMOTE_DATABASE.md               ✅ 95 colunas documentadas
+│   ├── README_USUARIOS.md               ✅ Guia de usuários
 │   └── PROMPT_NOVO_CHAT.md              ✅ Este arquivo
 │
 ├── src/multi_tenant/
 │   ├── auth/                            ✅ Fase 2 (completa)
-│   │   ├── __init__.py
 │   │   ├── auth.py
 │   │   └── middleware.py
 │   │
-│   ├── dashboards/                      ✅ Fase 2 (completa)
-│   │   ├── __init__.py
-│   │   ├── login_page.py
-│   │   ├── admin_panel.py
-│   │   ├── client_dashboard.py
+│   ├── dashboards/                      ✅ Fase 2 (básico)
+│   │   ├── login_page.py                    ⚠️ Fase 4: melhorar
+│   │   ├── admin_panel.py                   ⚠️ Fase 5: expandir
+│   │   ├── client_dashboard.py              🔄 Fase 4: IMPLEMENTAR
 │   │   └── app.py
 │   │
-│   └── etl_v4/                          ⚠️ Fase 3 (A CRIAR!)
-│       ├── __init__.py                  [ ] A criar
-│       ├── extractor.py                 [ ] A criar
-│       ├── transformer.py               [ ] A criar
-│       ├── loader.py                    [ ] A criar
-│       ├── watermark_manager.py         [ ] A criar
-│       ├── pipeline.py                  [ ] A criar
-│       └── notifications.py             [ ] A criar (opcional)
+│   └── etl_v4/                          ✅ Fase 3 (completa)
+│       ├── extractor.py
+│       ├── transformer.py
+│       ├── loader.py
+│       ├── watermark_manager.py
+│       └── pipeline.py
 │
-├── scripts/
-│   ├── restart_multi_tenant.sh          ✅ Deploy app
-│   └── run_etl_multi_tenant.sh          [ ] A criar (Fase 3)
+├── sql/multi_tenant/
+│   ├── tenant_configs.sql               [ ] Fase 4: criar tabela
+│   └── ... (9 tabelas existentes)
 │
-└── tests/multi_tenant/                  [ ] A criar (Fase 3)
-    ├── test_remote_connection.py        [ ] Testar conexão remota
-    ├── test_extractor.py                [ ] Testar extração
-    └── test_pipeline.py                 [ ] Testar pipeline completo
+└── scripts/
+    ├── restart_multi_tenant.sh          ✅ Deploy app
+    └── run_etl.sh                       ✅ ETL manual
 ```
 
 ---
 
-## 🔧 BANCO DE DADOS - MUDANÇAS APLICADAS
+## 🚨 PONTOS DE ATENÇÃO (FASE 4)
 
-### RLS Status por Tabela
+### 1. Dashboard Já Existe
+- ⚠️ NÃO reescrever do zero
+- ✅ Melhorar incrementalmente
+- ✅ Manter compatibilidade com Fase 2
 
-| Tabela | RLS Ativo? | Motivo |
-|--------|-----------|---------|
-| tenants | ✅ Sim | Isolar dados por tenant |
-| users | ✅ Sim | Isolar usuários por tenant |
-| sessions | ❌ **NÃO** | **Fix:** Bloqueava autenticação |
-| conversations_analytics | ✅ Sim | Isolar dados por tenant |
-| tenant_configs | ✅ Sim | Isolar configs por tenant |
-| audit_logs | ✅ Sim | Isolar logs por tenant |
+### 2. Placeholders vs Dados Reais
+Atualmente o dashboard tem:
+```python
+# client_dashboard.py (linha ~61)
+FALSE as is_lead,          # Placeholder Fase 3
+FALSE as visit_scheduled,  # Placeholder Fase 3
+FALSE as crm_converted     # Placeholder Fase 3
+```
 
-### Credenciais Descobertas
+**Fase 4 deve substituir por:**
+- Análise de texto real (keywords, regex)
+- Lógica de negócio do AllpFit
+- Configurável por tenant
 
-Durante o debug, descobrimos:
-- `integracao_user` (owner da tabela sessions): vlVMVM6UNz2yYSBlzodPjQvZh
-- Esse usuário foi usado para desabilitar RLS
+### 3. Performance com Dados Reais
+- ✅ Cache já existe (5min TTL)
+- ⚠️ 1.093 conversas → queries podem ficar lentas
+- ✅ Adicionar índices se necessário
+- ✅ Lazy loading em tabelas
 
----
-
-## 🚨 ARMADILHAS E ALERTAS (Fase 3)
-
-### 1. Timezone (UTC vs SP)
-- ⚠️ Chatwoot usa UTC, Brasil usa UTC-3
-- ✅ Converter watermark SP → UTC para queries
-- ✅ Converter dados UTC → SP para exibição
-
-### 2. Limite de Conexões
-- ⚠️ ETL abre muitas conexões simultâneas
-- ✅ Configurar pool: `pool_size=3, max_overflow=2`
-- ✅ Usar `pool_pre_ping=True`
-
-### 3. Dados Grandes (Memory Error)
-- ⚠️ Carregar 100k+ linhas em memória pode crashar
-- ✅ Usar chunks: `LIMIT 10000 OFFSET X`
-- ✅ Processar e gravar chunk por chunk
-
-### 4. Foreign Keys (Órfãos)
-- ⚠️ Inserir conversa sem criar contato antes → erro
-- ✅ Ordem: Tenants → Inboxes → Contacts → Conversations
-
-### 5. Execução Simultânea
-- ⚠️ ETL rodar 2x ao mesmo tempo → duplicatas
-- ✅ Usar advisory locks: `pg_try_advisory_lock()`
-
-### 6. RLS em Tabelas de Controle
-- ⚠️ Não cometer o mesmo erro da Fase 2!
-- ✅ Desabilitar RLS em `etl_control` e `inbox_tenant_mapping`
+### 4. Multi-Tenant Awareness
+- ✅ RLS já funciona
+- ⚠️ Personalização deve ser por tenant
+- ✅ Usar `tenant_configs` para branding
 
 ---
 
-## ✅ CHECKLIST DE IMPLEMENTAÇÃO (FASE 3)
+## ✅ CHECKLIST DE IMPLEMENTAÇÃO (FASE 4)
 
-### Dia 1: Setup e Análise (4-6h)
-- [x] Confirmar credenciais do banco remoto Chatwoot ✅ (178.156.206.184:5432)
-- [ ] Testar conexão remota (`psql -h 178.156.206.184 -p 5432 -U hetzner_hyago_read -d banco-chatwoot`)
-- [ ] Verificar se view `vw_conversations_analytics_final` existe
-- [ ] Listar colunas disponíveis (criar script `verify_remote_schema.py`)
-- [ ] Documentar schema remoto (criar `REMOTE_DATABASE.md`)
-- [ ] Identificar inbox_ids do AllpFit (tenant_id=1)
-- [ ] Popular `inbox_tenant_mapping` (seed data)
-- [ ] Desabilitar RLS em `etl_control` e `inbox_tenant_mapping`
+### Dia 1: Personalização (4-6h)
+- [ ] Criar tabela `tenant_configs`
+- [ ] Adicionar seed data para AllpFit
+- [ ] Implementar função `apply_tenant_branding()`
+- [ ] Testar branding dinâmico
+- [ ] Atualizar client_dashboard.py
 
-### Dia 2: Implementação Core (6-8h)
-- [ ] Criar estrutura de pastas `src/multi_tenant/etl_v4/`
-- [ ] Implementar `extractor.py` (buscar dados remotos)
-- [ ] Implementar `transformer.py` (normalizar dados)
-- [ ] Implementar `loader.py` (UPSERT local)
-- [ ] Implementar `watermark_manager.py` (controle de sync)
-- [ ] Implementar advisory locks (evitar execução simultânea)
-- [ ] Logging estruturado em TODOS os arquivos
+### Dia 2: Análise de IA (6-8h)
+- [ ] Implementar detecção de leads (keywords)
+- [ ] Implementar classificação de visitas
+- [ ] Implementar detecção de conversões CRM
+- [ ] Substituir placeholders por lógica real
+- [ ] Adicionar coluna calculada no transformer?
 
-### Dia 3: Pipeline e Testes (6-8h)
-- [ ] Implementar `pipeline.py` (orquestrador)
-- [ ] Criar testes unitários (`tests/multi_tenant/`)
-- [ ] Testar extração de 1 inbox (AllpFit)
-- [ ] Testar pipeline completo (end-to-end)
-- [ ] Executar ETL para AllpFit (tenant_id=1)
-- [ ] Validar dados no dashboard (Fase 2)
-- [ ] Verificar se queries retornam dados reais (não mais vazias)
-- [ ] Documentar implementação (`FASE3_IMPLEMENTACAO.md`)
-- [ ] Atualizar cronograma (`00_CRONOGRAMA_MASTER.md`)
+### Dia 3: Visualizações e Testes (4-6h)
+- [ ] Melhorar gráficos (tendências, comparativos)
+- [ ] Adicionar filtros avançados
+- [ ] Implementar exportação CSV/Excel
+- [ ] Testes de isolamento (RLS)
+- [ ] Testes de performance
+- [ ] Documentar Fase 4
 
 ---
 
-## 🎯 CRITÉRIOS DE SUCESSO (FASE 3)
+## 🎯 CRITÉRIOS DE SUCESSO (FASE 4)
 
-A Fase 3 estará completa quando:
+A Fase 4 estará completa quando:
 
-1. ✅ ETL sincroniza dados do AllpFit (tenant_id=1) com sucesso
-2. ✅ Watermark funciona (apenas dados novos na 2ª execução)
-3. ✅ Dashboard mostra dados reais (tabela não mais vazia!)
-4. ✅ Queries retornam leads, visitas, etc (colunas reais)
-5. ✅ Logs estruturados funcionando (sem prints)
-6. ✅ Testes passando (unit + integration)
-7. ✅ Documentação completa (`FASE3_IMPLEMENTACAO.md`)
-8. ✅ Advisory locks funcionando (sem execução simultânea)
-9. ✅ Performance aceitável (< 5min para sync completo)
+1. ✅ Dashboard mostra métricas REAIS (não mais placeholders)
+2. ✅ Branding personalizado por tenant funcionando
+3. ✅ Análise de IA detecta leads/visitas/conversões
+4. ✅ Filtros avançados implementados
+5. ✅ Exportação de dados funcionando
+6. ✅ Performance aceitável (< 3s para carregar dashboard)
+7. ✅ RLS continua funcionando
+8. ✅ Documentação atualizada
 
-## 🚀 PRÓXIMAS FASES (Pós-Fase 3)
+---
 
-### Fase 4: Dashboard Cliente Avançado
-- Gráficos mais complexos
-- Filtros avançados
-- Exportação de dados (PDF/Excel)
+## 🚀 PRÓXIMAS FASES (Pós-Fase 4)
 
 ### Fase 5: Dashboard Admin Completo
 - Gerenciamento de clientes (CRUD)
+- Adicionar 6 clientes do Chatwoot
 - Métricas agregadas
 - Auditoria de ações
 
@@ -461,26 +426,16 @@ A Fase 3 estará completa quando:
 ## 🔗 LINKS RÁPIDOS
 
 - **Aplicação:** http://localhost:8504
-- **Logs:** /home/tester/projetos/allpfit-analytics/logs/streamlit_multi_tenant_*.log
-- **Banco:** `psql -U isaac -h localhost -d geniai_analytics`
+- **Banco:** `PGPASSWORD='vlVMVM6UNz2yYSBlzodPjQvZh' psql -U johan_geniai -h localhost -d geniai_analytics`
 - **Restart:** `./scripts/restart_multi_tenant.sh`
+- **ETL Manual:** `python3 src/multi_tenant/etl_v4/pipeline.py --tenant-id 1`
 
 ---
 
-**Última atualização:** 2025-11-06 (pós-revisão Fase 2)
+**Última atualização:** 2025-11-06 (pós-conclusão Fase 3)
 **Criado por:** Isaac (via Claude Code)
-**Status:** ✅ Fase 2 COMPLETA E REVISADA - Pronto para Fase 3
+**Status:** ✅ Fase 3 COMPLETA - Pronto para Fase 4
 
 ---
 
-## 📚 REFERÊNCIAS RÁPIDAS
-
-- **Cronograma Completo:** `docs/multi-tenant/00_CRONOGRAMA_MASTER.md`
-- **Guia da Fase 3:** `docs/multi-tenant/RECOMENDACOES_FASE3.md` ⭐⭐⭐
-- **Banco de Dados:** `docs/multi-tenant/DB_DOCUMENTATION.md`
-- **Melhorias Fase 2:** `docs/multi-tenant/FASE2_MELHORIAS.md`
-- **ETL V3 Atual:** `src/etl_v3/` (base para adaptar)
-
----
-
-**BOA SORTE COM A FASE 3! 🚀**
+**BOA SORTE COM A FASE 4! 🚀**
