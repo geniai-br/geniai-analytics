@@ -133,8 +133,8 @@ class ConversationLoader:
 
         try:
             with self.local_engine.begin() as conn:
-                # Set role to etl_service to bypass RLS
-                conn.execute(text("SET ROLE etl_service"))
+                # johan_geniai is owner and bypasses RLS automatically
+                # No need to SET ROLE
 
                 # 1. Count existing records
                 count_existing_query = text("""
