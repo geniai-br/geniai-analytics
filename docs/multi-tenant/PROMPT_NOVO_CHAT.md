@@ -1,8 +1,8 @@
-# 🤖 PROMPT PARA NOVO CHAT - CONTINUAR FASE 4
+# 🤖 PROMPT PARA NOVO CHAT - INICIAR FASE 5
 
-> **Use este prompt para continuar a Fase 4 (Dashboard Cliente) do sistema GeniAI Analytics**
-> **Última atualização:** 2025-11-06 19:30 (Bug ETL Corrigido)
-> **Status:** Fase 4 - 80% COMPLETA | Core Features IMPLEMENTADAS e FUNCIONANDO
+> **Use este prompt para iniciar a Fase 5 (Dashboard Admin Completo) do sistema GeniAI Analytics**
+> **Última atualização:** 2025-11-06 21:45 (Fase 4 Concluída)
+> **Status:** Fase 4 - ✅ 100% COMPLETA | Pronto para Fase 5
 
 ---
 
@@ -28,18 +28,18 @@
 ## 📋 PROMPT PARA COPIAR E COLAR
 
 ```
-Olá! Preciso CONTINUAR a FASE 4 (Dashboard Cliente) do sistema GeniAI Analytics.
+Olá! Preciso INICIAR a FASE 5 (Dashboard Admin) do sistema GeniAI Analytics.
 
 CONTEXTO RÁPIDO:
 - Projeto: Sistema multi-tenant SaaS com autenticação e ETL automatizado
-- Fase 1: ✅ COMPLETA (banco geniai_analytics, RLS, migração de dados)
-- Fase 2: ✅ COMPLETA (autenticação, login, dashboards básicos)
-- Fase 3: ✅ COMPLETA (ETL multi-tenant, 1.107 conversas carregadas)
-- Fase 4: ✅ 80% COMPLETA (análise de leads funcionando! Bug ETL corrigido!)
-- Próximo: FINALIZAR Fase 4 ou iniciar Fase 5
+- Fase 1: ✅ 100% COMPLETA (banco geniai_analytics, RLS, 9 tabelas)
+- Fase 2: ✅ 100% COMPLETA (autenticação multi-tenant, login, router)
+- Fase 3: ✅ 100% COMPLETA (ETL automatizado, 1.107 conversas)
+- Fase 4: ✅ 100% COMPLETA (análise IA, exportação CSV, gráficos, taxa conversão corrigida)
+- Próximo: FASE 5 - Dashboard Admin Completo
 
-SITUAÇÃO ATUAL - CHECKPOINT FASE 4:
-As Fases 1, 2, 3 e PARTE DA 4 estão COMPLETAS e FUNCIONANDO:
+SITUAÇÃO ATUAL - FASE 4 CONCLUÍDA:
+As Fases 1, 2, 3 e 4 estão 100% COMPLETAS e FUNCIONANDO:
 
 ✅ Fase 1 - Banco de Dados:
   - geniai_analytics criado (9 tabelas com RLS)
@@ -64,18 +64,19 @@ As Fases 1, 2, 3 e PARTE DA 4 estão COMPLETAS e FUNCIONANDO:
   - Duração real: ~8h
   - Dashboard mostrando dados reais!
 
-✅ Fase 4 - Dashboard Cliente (80% COMPLETA):
-  - ✅ Análise de Leads com IA (regex): 322 leads detectados ✅ ATUALIZADO
-  - ✅ Personalização por tenant: tabela tenant_configs criada
-  - ✅ Branding dinâmico: módulo branding.py (400+ linhas CSS)
-  - ✅ Dashboard atualizado: KPIs reais, tabela com score IA
+✅ Fase 4 - Dashboard Cliente (✅ 100% COMPLETA):
+  - ✅ Análise de Leads com IA (regex): 322 leads, 80% acurácia, R$ 0
+  - ✅ Personalização por tenant: tenant_configs + branding dinâmico
+  - ✅ Dashboard completo: KPIs, funil conversão, taxa 40.9%
+  - ✅ Exportação CSV: 15 colunas, formato Excel-friendly
+  - ✅ 3 Gráficos: leads/dia, por inbox, score IA
   - ✅ Filtros avançados: data, inbox, status
-  - ✅ 5 novas colunas no banco + índices
-  - ✅ 1.107 conversas reprocessadas com análise ✅ ATUALIZADO
-  - ✅ Bug ETL corrigido (loader.py SET ROLE removido) ⭐ NOVO
-  - 📋 OpenAI planejado (aguardando aprovação Isaac)
-  - Duração real: ~8h
-  - Commits: 2c0636b (análise IA) + 8e06d86 (bug fix) ✅ ATUALIZADO
+  - ✅ 5 colunas + 3 índices no banco
+  - ✅ 1.107 conversas com análise IA
+  - ✅ Bug ETL corrigido + taxa conversão corrigida
+  - ✅ Documentação completa (3 docs: FASE4, GUIA_RAPIDO, RESUMO)
+  - 📋 OpenAI planejado (opcional, aguardando aprovação)
+  - Duração real: ~11h (54% mais rápido que estimado)
 
 LIÇÕES APRENDIDAS (Fases 1-4):
 1. ✅ RLS em tabelas de controle bloqueia sistema → Desabilitar em sessions, etl_control
@@ -114,45 +115,20 @@ Por favor, leia estes arquivos para entender o projeto:
 7. 👥 docs/multi-tenant/README_USUARIOS.md
    → Guia de usuários do banco (johan_geniai vs isaac)
 
-TAREFAS PARA ESTE CHAT (CONTINUAR FASE 4):
+🚀 TAREFAS PARA ESTE CHAT (INICIAR FASE 5):
 
-A Fase 4 está 80% COMPLETA! Core features implementadas e funcionando:
+A Fase 4 está ✅ 100% COMPLETA! Sistema cliente funcionando perfeitamente.
 
-✅ JÁ IMPLEMENTADO (Commit 2c0636b):
-1. ✅ Análise de Leads com IA (regex)
-   - LeadAnalyzer: 96 keywords (39 lead + 29 visita + 28 conversão)
-   - Score AI 0-100 com labels (Alto/Médio/Baixo/N/A)
-   - 322 leads detectados de 1.107 conversas (29,1%) ✅ ATUALIZADO
-   - Performance: 2s para 1.107 conversas
-   - Arquivo: src/multi_tenant/etl_v4/lead_analyzer.py (600+ linhas)
+📊 **Resumo Fase 4 (Concluída):**
+- Análise IA: 322 leads detectados (80% acurácia, R$ 0)
+- Dashboard completo: KPIs, funil, gráficos, CSV export, taxa 40.9%
+- Personalização por tenant + branding dinâmico
+- Performance: < 3s carregamento, 2s análise
+- Documentação: 3 docs completos (GUIA_RAPIDO, RESUMO, DASHBOARD)
 
-2. ✅ Personalização por Tenant
-   - Tabela tenant_configs criada (17 campos: branding, features, etc)
-   - Seed data AllpFit: laranja #FF6B35 + azul #1E90FF
-   - Módulo branding.py: 400+ linhas CSS dinâmico
-   - Arquivo: src/multi_tenant/dashboards/branding.py
-
-3. ✅ Dashboard Atualizado
-   - KPIs mostrando dados reais (não mais placeholders!)
-   - Tabela de leads com classificação IA
-   - Gráfico de leads por dia
-   - Filtros avançados: data, inbox, status
-
-4. ✅ Banco de Dados
-   - 5 colunas adicionadas: is_lead, visit_scheduled, crm_converted, ai_probability_label/score
-   - 3 índices criados para performance
-   - 1.107 conversas reprocessadas ✅ ATUALIZADO
-
-5. ✅ Bug Fix ETL ⭐ NOVO
-   - Removido SET ROLE etl_service do loader.py
-   - johan_geniai (owner) já bypassa RLS automaticamente
-   - ETL funcionando 100% sem erros de permissão
-   - Commit: 8e06d86
-
-📋 PENDENTE (Fase 5):
-1. Exportação CSV (1-2h) - Botão download
-2. Gráficos melhorados (2-3h) - Tendências, comparativos
-3. Dashboard Admin completo - Gerenciar tenants
+🎯 **FOCO AGORA: FASE 5 - Dashboard Admin**
+→ Leia docs/multi-tenant/00_CRONOGRAMA_MASTER.md para objetivos da Fase 5
+→ Gerenciar múltiplos clientes, adicionar 6 novos tenants, métricas agregadas
 
 🤖 EVOLUÇÃO FUTURA (Pós-Lançamento):
 - **OpenAI Integration** - Evolução OPCIONAL após sistema completo (Fase 6+)
