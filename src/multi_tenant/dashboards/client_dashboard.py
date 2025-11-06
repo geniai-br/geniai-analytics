@@ -18,6 +18,7 @@ if src_path not in sys.path:
 
 from multi_tenant.auth import get_database_engine, logout_user
 from multi_tenant.auth.middleware import clear_session_state, set_rls_context
+from multi_tenant.dashboards.branding import get_tenant_branding, apply_branding, render_header_with_logo
 from app.config import format_number, format_percentage
 
 
@@ -26,7 +27,7 @@ from app.config import format_number, format_percentage
 # ============================================================================
 
 @st.cache_data(ttl=300)  # Cache de 5 minutos
-def load_conversations(tenant_id, date_start=None, date_end=None):
+def load_conversations(tenant_id, date_start=None, date_end=None, inbox_filter=None, status_filter=None):
     """
     Carrega conversas do tenant (filtrado automaticamente via RLS)
 
@@ -58,11 +59,11 @@ def load_conversations(tenant_id, date_start=None, date_end=None):
             user_messages_count as agent_messages,
             0 as bot_messages,
             status as conversation_status,
-            FALSE as is_lead,
-            FALSE as visit_scheduled,
-            FALSE as crm_converted,
-            'N/A' as ai_probability_label,
-            0.0 as ai_probability_score,
+            is_lead,
+            visit_scheduled,
+            crm_converted,
+            ai_probability_label,
+            ai_probability_score,
             etl_updated_at as synced_at
         FROM conversations_analytics
         WHERE 1=1
@@ -78,6 +79,18 @@ def load_conversations(tenant_id, date_start=None, date_end=None):
     if date_end:
         query += " AND conversation_date <= :date_end"
         params['date_end'] = date_end
+
+    # Filtro por inbox (Fase 4)
+    if inbox_filter and inbox_filter != "Todos":
+        query += " AND inbox_id = :inbox_id"
+        params['inbox_id'] = inbox_filter
+
+    # Filtro por status (Fase 4)
+    if status_filter and status_filter != "Todos":
+        status_map = {"Abertas": 0, "Resolvidas": 1, "Pendentes": 2}
+        if status_filter in status_map:
+            query += " AND status = :status"
+            params['status'] = status_map[status_filter]
 
     query += " ORDER BY conversation_date DESC, conversation_id DESC"
 
