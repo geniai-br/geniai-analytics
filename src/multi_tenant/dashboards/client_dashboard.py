@@ -141,6 +141,40 @@ def get_tenant_info(tenant_id):
         return None
 
 
+def get_tenant_inboxes(tenant_id):
+    """
+    Retorna lista de inboxes do tenant
+
+    Args:
+        tenant_id: ID do tenant
+
+    Returns:
+        list[dict]: Lista de inboxes com id e name
+    """
+    engine = get_database_engine()
+
+    query = text("""
+        SELECT DISTINCT
+            itm.inbox_id,
+            itm.inbox_name
+        FROM inbox_tenant_mapping itm
+        WHERE itm.tenant_id = :tenant_id
+        ORDER BY itm.inbox_name
+    """)
+
+    with engine.connect() as conn:
+        result = conn.execute(query, {'tenant_id': tenant_id})
+        inboxes = []
+
+        for row in result:
+            inboxes.append({
+                'id': row.inbox_id,
+                'name': row.inbox_name
+            })
+
+        return inboxes
+
+
 # ============================================================================
 # CÁLCULOS DE MÉTRICAS
 # ============================================================================
@@ -637,8 +671,8 @@ def show_client_dashboard(session, tenant_id=None):
 
     st.divider()
 
-    # === FILTROS DE DATA ===
-    col1, col2, col3 = st.columns([2, 1, 1])
+    # === FILTROS DE DATA E INBOX ===
+    col1, col2, col3, col4 = st.columns([2, 1, 1, 2])
 
     with col1:
         # Indicador de próxima atualização automática
@@ -660,16 +694,46 @@ def show_client_dashboard(session, tenant_id=None):
             key="date_end"
         )
 
+    with col4:
+        # Filtro por Inbox
+        tenant_inboxes = get_tenant_inboxes(display_tenant_id)
+
+        # Opções do selectbox: "Todas as Inboxes" + inboxes do tenant
+        inbox_options = ["Todas as Inboxes"] + [inbox['name'] for inbox in tenant_inboxes]
+
+        # Inicializar valor padrão apenas uma vez
+        if 'inbox_filter' not in st.session_state:
+            st.session_state['inbox_filter'] = "Todas as Inboxes"
+
+        # Selectbox com key direto (sem gerenciar index manualmente)
+        selected_inbox_name = st.selectbox(
+            "Inbox",
+            options=inbox_options,
+            key="inbox_filter"
+        )
+
+        # Converter nome para ID (se não for "Todas")
+        selected_inbox_id = None
+        if selected_inbox_name != "Todas as Inboxes":
+            for inbox in tenant_inboxes:
+                if inbox['name'] == selected_inbox_name:
+                    selected_inbox_id = inbox['id']
+                    break
+
     # Botão atualizar
     if st.button("🔄 Atualizar Dados"):
         st.cache_data.clear()
         st.rerun()
 
+    # Indicador visual de filtro ativo
+    if selected_inbox_id is not None:
+        st.info(f"📥 Exibindo dados apenas da inbox: **{selected_inbox_name}**")
+
     st.divider()
 
     # === CARREGAR DADOS ===
     with st.spinner("🔄 Carregando dados..."):
-        df = load_conversations(display_tenant_id, date_start, date_end)
+        df = load_conversations(display_tenant_id, date_start, date_end, inbox_filter=selected_inbox_id)
 
     if df.empty:
         st.warning("⚠️ Nenhum dado encontrado para o período selecionado")
