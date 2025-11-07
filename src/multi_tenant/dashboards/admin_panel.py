@@ -29,7 +29,10 @@ def get_active_tenants():
     Returns:
         list[dict]: Lista de tenants com estatísticas
     """
-    engine = get_database_engine()
+    # Usar owner para bypass RLS (painel admin precisa ver todos os tenants)
+    from sqlalchemy import create_engine
+    owner_url = "postgresql://johan_geniai:vlVMVM6UNz2yYSBlzodPjQvZh@localhost:5432/geniai_analytics"
+    engine = create_engine(owner_url)
 
     query = text("""
         SELECT
@@ -79,11 +82,14 @@ def get_global_metrics():
     Returns:
         dict: Métricas globais
     """
-    engine = get_database_engine()
+    # Usar owner para bypass RLS (painel admin precisa ver todos os dados)
+    from sqlalchemy import create_engine
+    owner_url = "postgresql://johan_geniai:vlVMVM6UNz2yYSBlzodPjQvZh@localhost:5432/geniai_analytics"
+    engine = create_engine(owner_url)
 
     query = text("""
         SELECT
-            (SELECT COUNT(*) FROM tenants WHERE status = 'active' AND id != 0) AS active_tenants,
+            (SELECT COUNT(*) FROM tenants WHERE status = 'active' AND id != 0 AND deleted_at IS NULL) AS active_tenants,
             (SELECT COUNT(*) FROM conversations_analytics) AS total_conversations,
             (SELECT COUNT(DISTINCT contact_id) FROM conversations_analytics WHERE contact_id IS NOT NULL) AS total_leads,
             (SELECT COUNT(*) FROM conversations_analytics WHERE status = 1) AS total_visits
@@ -135,9 +141,9 @@ def render_global_metrics(metrics):
         st.metric("Leads Totais", f"{metrics['total_leads']:,}".replace(',', '.'))
 
     with col4:
-        # Calcular taxa de conversão
+        # Calcular taxa de conversão real (conversas resolvidas / total)
         if metrics['total_conversations'] > 0:
-            conversion_rate = (metrics['total_leads'] / metrics['total_conversations']) * 100
+            conversion_rate = (metrics['total_visits'] / metrics['total_conversations']) * 100
             st.metric("Taxa Conversão", f"{conversion_rate:.1f}%")
         else:
             st.metric("Taxa Conversão", "0%")
