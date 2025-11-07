@@ -641,7 +641,10 @@ def show_client_dashboard(session, tenant_id=None):
     col1, col2, col3 = st.columns([2, 1, 1])
 
     with col1:
-        st.write("")  # Espaçamento
+        # Indicador de próxima atualização automática
+        from multi_tenant.utils.etl_schedule import get_next_etl_time, format_etl_countdown
+        next_info = get_next_etl_time()
+        st.caption(format_etl_countdown(next_info))
 
     with col2:
         date_start = st.date_input(
