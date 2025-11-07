@@ -558,6 +558,228 @@ def run_etl_for_tenant(tenant_id: int, tenant_name: str) -> bool:
         return False
 
 
+# ============================================================================
+# CRUD DE USUÁRIOS - FASE 5
+# ============================================================================
+
+def get_users_by_tenant(tenant_id):
+    """
+    Retorna todos os usuários de um tenant
+
+    Args:
+        tenant_id: ID do tenant
+
+    Returns:
+        list[dict]: Lista de usuários
+    """
+    # Usar owner para ver todos os usuários (super_admin precisa ver)
+    from sqlalchemy import create_engine
+    owner_url = "postgresql://johan_geniai:vlVMVM6UNz2yYSBlzodPjQvZh@localhost:5432/geniai_analytics"
+    engine = create_engine(owner_url)
+
+    query = text("""
+        SELECT
+            u.id,
+            u.tenant_id,
+            u.email,
+            u.full_name,
+            u.role,
+            u.is_active,
+            u.created_at,
+            u.last_login,
+            t.name as tenant_name
+        FROM users u
+        JOIN tenants t ON u.tenant_id = t.id
+        WHERE u.tenant_id = :tenant_id AND u.deleted_at IS NULL
+        ORDER BY u.role, u.email
+    """)
+
+    with engine.connect() as conn:
+        result = conn.execute(query, {'tenant_id': tenant_id})
+        users = []
+
+        for row in result:
+            users.append({
+                'id': row.id,
+                'tenant_id': row.tenant_id,
+                'email': row.email,
+                'full_name': row.full_name,
+                'role': row.role,
+                'is_active': row.is_active,
+                'created_at': row.created_at,
+                'last_login': row.last_login,
+                'tenant_name': row.tenant_name
+            })
+
+        return users
+
+
+def create_user(tenant_id, email, full_name, password, role='client'):
+    """
+    Cria novo usuário para um tenant
+
+    Args:
+        tenant_id: ID do tenant
+        email: Email do usuário
+        full_name: Nome completo
+        password: Senha em texto plano (será criptografada)
+        role: Role do usuário ('admin' ou 'client')
+
+    Returns:
+        int: ID do usuário criado ou None em caso de erro
+    """
+    # Usar owner para criar usuário (bypassa RLS)
+    from sqlalchemy import create_engine
+    import bcrypt
+
+    owner_url = "postgresql://johan_geniai:vlVMVM6UNz2yYSBlzodPjQvZh@localhost:5432/geniai_analytics"
+    engine = create_engine(owner_url)
+
+    try:
+        # Gerar hash da senha
+        password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+        with engine.begin() as conn:
+            # Verificar se email já existe
+            check_query = text("SELECT id FROM users WHERE email = :email AND deleted_at IS NULL")
+            existing = conn.execute(check_query, {'email': email}).fetchone()
+
+            if existing:
+                st.error(f"❌ Erro: Email '{email}' já existe!")
+                return None
+
+            # Inserir usuário
+            insert_query = text("""
+                INSERT INTO users (tenant_id, email, password_hash, full_name, role, is_active, created_at, updated_at)
+                VALUES (:tenant_id, :email, :password_hash, :full_name, :role, TRUE, NOW(), NOW())
+                RETURNING id
+            """)
+
+            result = conn.execute(insert_query, {
+                'tenant_id': tenant_id,
+                'email': email,
+                'password_hash': password_hash,
+                'full_name': full_name,
+                'role': role
+            })
+
+            user_id = result.fetchone()[0]
+
+        # Registrar no audit log
+        if 'user' in st.session_state:
+            log_audit_action(
+                user_id=st.session_state['user'].get('user_id'),
+                tenant_id=tenant_id,
+                action='create_user',
+                entity_type='user',
+                entity_id=user_id,
+                new_value={'email': email, 'full_name': full_name, 'role': role}
+            )
+
+        return user_id
+
+    except Exception as e:
+        st.error(f"❌ Erro ao criar usuário: {str(e)}")
+        return None
+
+
+def update_user(user_id, full_name=None, role=None, is_active=None, new_password=None):
+    """
+    Atualiza usuário existente
+
+    Args:
+        user_id: ID do usuário
+        full_name: Novo nome (opcional)
+        role: Novo role (opcional)
+        is_active: Novo status (opcional)
+        new_password: Nova senha (opcional)
+
+    Returns:
+        bool: True se sucesso, False se erro
+    """
+    # Usar owner para atualizar usuário (bypassa RLS)
+    from sqlalchemy import create_engine
+    import bcrypt
+
+    owner_url = "postgresql://johan_geniai:vlVMVM6UNz2yYSBlzodPjQvZh@localhost:5432/geniai_analytics"
+    engine = create_engine(owner_url)
+
+    try:
+        with engine.begin() as conn:
+            updates = []
+            params = {'user_id': user_id}
+
+            if full_name:
+                updates.append("full_name = :full_name")
+                params['full_name'] = full_name
+
+            if role:
+                updates.append("role = :role")
+                params['role'] = role
+
+            if is_active is not None:
+                updates.append("is_active = :is_active")
+                params['is_active'] = is_active
+
+            if new_password:
+                password_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                updates.append("password_hash = :password_hash")
+                params['password_hash'] = password_hash
+
+            if not updates:
+                return True
+
+            updates.append("updated_at = NOW()")
+
+            query = text(f"""
+                UPDATE users
+                SET {', '.join(updates)}
+                WHERE id = :user_id AND deleted_at IS NULL
+            """)
+
+            conn.execute(query, params)
+
+            return True
+
+    except Exception as e:
+        st.error(f"❌ Erro ao atualizar usuário: {str(e)}")
+        return False
+
+
+def soft_delete_user(user_id):
+    """
+    Soft delete de usuário (marca como deletado)
+
+    Args:
+        user_id: ID do usuário
+
+    Returns:
+        bool: True se sucesso, False se erro
+    """
+    # Usar owner para deletar usuário (bypassa RLS)
+    from sqlalchemy import create_engine
+    owner_url = "postgresql://johan_geniai:vlVMVM6UNz2yYSBlzodPjQvZh@localhost:5432/geniai_analytics"
+    engine = create_engine(owner_url)
+
+    try:
+        with engine.begin() as conn:
+            query = text("""
+                UPDATE users
+                SET deleted_at = NOW(),
+                    is_active = FALSE,
+                    updated_at = NOW()
+                WHERE id = :user_id AND deleted_at IS NULL
+            """)
+
+            conn.execute(query, {'user_id': user_id})
+
+            return True
+
+    except Exception as e:
+        st.error(f"❌ Erro ao deletar usuário: {str(e)}")
+        return False
+
+
 def get_available_chatwoot_accounts():
     """
     Busca accounts disponíveis no Chatwoot (banco remoto)
@@ -949,6 +1171,189 @@ def render_advanced_metrics(tenants):
         st.metric("Taxa Conversão Média", f"{df['Taxa Conversão (%)'].mean():.1f}%")
 
 
+def render_user_management(tenants):
+    """
+    Renderiza interface para gerenciar usuários
+    """
+    st.markdown("### 👥 Gerenciar Usuários")
+    st.caption("Criar e gerenciar usuários de cada tenant")
+
+    if not tenants:
+        st.info("ℹ️ Nenhum cliente cadastrado ainda.")
+        return
+
+    # Selecionar tenant
+    tenant_options = {f"{t['name']} (ID: {t['id']})": t for t in tenants}
+    selected_tenant_name = st.selectbox(
+        "Selecione o Tenant",
+        options=list(tenant_options.keys()),
+        key="user_mgmt_tenant_select"
+    )
+
+    selected_tenant = tenant_options[selected_tenant_name]
+
+    st.markdown(f"#### Usuários de: **{selected_tenant['name']}**")
+
+    # Buscar usuários do tenant
+    users = get_users_by_tenant(selected_tenant['id'])
+
+    # Mostrar usuários existentes
+    if users:
+        st.markdown(f"**{len(users)} usuário(s) cadastrado(s):**")
+
+        for user in users:
+            with st.expander(f"{'🔴' if not user['is_active'] else '🟢'} {user['full_name']} ({user['role']})"):
+                col1, col2, col3 = st.columns(3)
+
+                with col1:
+                    st.markdown(f"**Email:** {user['email']}")
+                    st.markdown(f"**Role:** `{user['role']}`")
+
+                with col2:
+                    status_text = "✅ Ativo" if user['is_active'] else "❌ Inativo"
+                    st.markdown(f"**Status:** {status_text}")
+                    if user['last_login']:
+                        from datetime import timedelta
+                        last_login_sp = user['last_login'] - timedelta(hours=3)
+                        st.markdown(f"**Último login:** {last_login_sp.strftime('%d/%m/%Y %H:%M')}")
+                    else:
+                        st.markdown("**Último login:** Nunca")
+
+                with col3:
+                    created_sp = user['created_at'] - timedelta(hours=3)
+                    st.markdown(f"**Criado em:** {created_sp.strftime('%d/%m/%Y')}")
+
+                # Ações
+                st.markdown("---")
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    if st.button(f"{'🔓 Ativar' if not user['is_active'] else '🔒 Desativar'}", key=f"toggle_{user['id']}", use_container_width=True):
+                        success = update_user(user['id'], is_active=not user['is_active'])
+                        if success:
+                            st.success(f"✅ Usuário {'ativado' if not user['is_active'] else 'desativado'}!")
+                            import time
+                            time.sleep(1)
+                            st.rerun()
+
+                with col2:
+                    # Usar session state para controlar confirmação de exclusão
+                    confirm_key = f"confirm_delete_user_{user['id']}"
+
+                    # Se não está em modo de confirmação, mostrar botão de deletar
+                    if confirm_key not in st.session_state or not st.session_state[confirm_key]:
+                        if st.button("🗑️ Deletar", key=f"del_{user['id']}", use_container_width=True, type="secondary"):
+                            st.session_state[confirm_key] = True
+                            st.rerun()
+                    else:
+                        # Está em modo de confirmação, mostrar opções
+                        col_confirm1, col_confirm2 = st.columns(2)
+                        with col_confirm1:
+                            if st.button("✅ Confirmar", key=f"confirm_yes_{user['id']}", use_container_width=True, type="primary"):
+                                success = soft_delete_user(user['id'])
+                                if success:
+                                    st.success(f"✅ Usuário deletado!")
+                                    st.session_state[confirm_key] = False
+                                    import time
+                                    time.sleep(1)
+                                    st.rerun()
+                        with col_confirm2:
+                            if st.button("❌ Cancelar", key=f"confirm_no_{user['id']}", use_container_width=True, type="secondary"):
+                                st.session_state[confirm_key] = False
+                                st.rerun()
+    else:
+        st.info("ℹ️ Nenhum usuário cadastrado para este tenant.")
+
+    st.divider()
+
+    # Formulário para criar novo usuário
+    st.markdown("#### ➕ Adicionar Novo Usuário")
+
+    # Botão de gerar senha FORA do form
+    session_key = f"generated_password_{selected_tenant['id']}"
+
+    col_btn1, col_btn2 = st.columns([1, 3])
+    with col_btn1:
+        if st.button("🎲 Gerar Senha", use_container_width=True, type="secondary"):
+            import secrets
+            import string
+            # Gerar senha aleatória
+            alphabet = string.ascii_letters + string.digits + "!@#$%"
+            st.session_state[session_key] = ''.join(secrets.choice(alphabet) for i in range(12))
+            st.rerun()
+
+    with col_btn2:
+        # Mostrar senha gerada se existir
+        if session_key in st.session_state:
+            st.code(f"🔑 Senha gerada: {st.session_state[session_key]} (copie!)", language=None)
+
+    with st.form("add_user_form"):
+        col1, col2 = st.columns(2)
+
+        with col1:
+            new_email = st.text_input(
+                "Email",
+                placeholder="usuario@exemplo.com",
+                help="Email único do usuário"
+            )
+
+            new_full_name = st.text_input(
+                "Nome Completo",
+                placeholder="João Silva",
+                help="Nome que aparecerá no sistema"
+            )
+
+        with col2:
+            new_role = st.selectbox(
+                "Role",
+                options=['admin', 'client'],
+                index=1,  # Default: client
+                help="admin = pode gerenciar usuários | client = apenas visualiza"
+            )
+
+            # Pré-preencher senha se foi gerada
+            default_password = st.session_state.get(session_key, "")
+            new_password = st.text_input(
+                "Senha",
+                value=default_password,
+                type="password",
+                placeholder="Mínimo 6 caracteres",
+                help="Senha para primeiro acesso (ou use o botão 'Gerar Senha' acima)"
+            )
+
+        submitted = st.form_submit_button("🚀 Criar Usuário", use_container_width=True)
+
+        if submitted:
+            if not new_email or not new_full_name or not new_password:
+                st.error("❌ Preencha todos os campos obrigatórios!")
+                return
+
+            if len(new_password) < 6:
+                st.error("❌ A senha deve ter no mínimo 6 caracteres!")
+                return
+
+            with st.spinner("⏳ Criando usuário..."):
+                user_id = create_user(
+                    tenant_id=selected_tenant['id'],
+                    email=new_email,
+                    full_name=new_full_name,
+                    password=new_password,
+                    role=new_role
+                )
+
+                if user_id:
+                    st.success(f"✅ Usuário **{new_full_name}** criado com sucesso!")
+                    st.info(f"📧 Email: `{new_email}` | 🔑 Senha: `{new_password}`")
+
+                    # Limpar senha gerada do session_state
+                    if session_key in st.session_state:
+                        del st.session_state[session_key]
+
+                    import time
+                    time.sleep(3)
+                    st.rerun()
+
+
 # ============================================================================
 # TELA PRINCIPAL
 # ============================================================================
@@ -1012,7 +1417,7 @@ def show_admin_panel(session):
     # Gerenciamento de Clientes (Fase 5)
     st.subheader("⚙️ Gerenciamento de Clientes")
 
-    tab1, tab2, tab3 = st.tabs(["➕ Adicionar Cliente", "✏️ Editar Cliente", "📊 Métricas Avançadas"])
+    tab1, tab2, tab3, tab4 = st.tabs(["➕ Adicionar Cliente", "✏️ Editar Cliente", "📊 Métricas Avançadas", "👥 Gerenciar Usuários"])
 
     with tab1:
         render_add_tenant_form()
@@ -1022,6 +1427,9 @@ def show_admin_panel(session):
 
     with tab3:
         render_advanced_metrics(tenants)
+
+    with tab4:
+        render_user_management(tenants)
 
 
 # ============================================================================
