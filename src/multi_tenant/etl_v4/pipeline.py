@@ -73,8 +73,9 @@ class ETLPipeline:
         host = os.getenv('LOCAL_DB_HOST', 'localhost')
         port = os.getenv('LOCAL_DB_PORT', '5432')
         database = os.getenv('LOCAL_DB_NAME', 'geniai_analytics')
-        user = os.getenv('LOCAL_DB_USER', 'isaac')
-        password = os.getenv('LOCAL_DB_PASSWORD', 'AllpFit2024@Analytics')
+        # Usar johan_geniai (owner) para bypassa RLS no ETL
+        user = os.getenv('LOCAL_DB_USER', 'johan_geniai')
+        password = os.getenv('LOCAL_DB_PASSWORD', 'vlVMVM6UNz2yYSBlzodPjQvZh')
 
         # URL encode password
         password_encoded = quote_plus(password)
