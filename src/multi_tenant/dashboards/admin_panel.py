@@ -188,17 +188,26 @@ def render_tenant_card(tenant):
         with col4:
             st.metric("Leads", f"{tenant['lead_count']:,}".replace(',', '.'))
 
-        # Última sincronização
+        # Última sincronização e próxima atualização
         if tenant['last_sync']:
             from datetime import datetime, timedelta
+            from multi_tenant.utils.etl_schedule import get_next_etl_time, format_etl_countdown
 
             # Converter UTC para SP
             last_sync_sp = tenant['last_sync'] - timedelta(hours=3)
             sync_str = last_sync_sp.strftime('%d/%m/%Y %H:%M')
 
             st.caption(f"📅 Última Sincronização: {sync_str}")
+
+            # Calcular próxima atualização baseado na última sync
+            next_info = get_next_etl_time(tenant['last_sync'])
+            if next_info['is_overdue']:
+                st.caption("🔄 Atualização em andamento ou atrasada")
+            else:
+                st.caption(f"⏰ Próxima Atualização: {next_info['formatted_datetime']} (em {next_info['hours_left']}h {next_info['minutes_left']}min)")
         else:
             st.caption("📅 Última Sincronização: Nenhuma")
+            st.caption("⏰ Aguardando primeira sincronização automática")
 
         st.divider()
 
