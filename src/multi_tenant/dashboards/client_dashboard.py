@@ -65,6 +65,12 @@ def load_conversations(tenant_id, date_start=None, date_end=None, inbox_filter=N
             crm_converted,
             ai_probability_label,
             ai_probability_score,
+            has_human_intervention,
+            is_resolved,
+            first_response_time_minutes,
+            conversation_period,
+            is_weekday,
+            is_business_hours,
             etl_updated_at as synced_at
         FROM conversations_analytics
         WHERE 1=1
@@ -183,6 +189,10 @@ def calculate_metrics(df):
     """
     Calcula métricas principais do dashboard
 
+    Agora inclui:
+    - Métricas de qualidade (IA%, Resolução, etc)
+    - Performance (tempo resposta)
+
     Args:
         df: DataFrame com conversas
 
@@ -193,18 +203,39 @@ def calculate_metrics(df):
         return {
             'total_contacts': 0,
             'ai_conversations': 0,
+            'human_conversations': 0,
             'leads': 0,
             'visits_scheduled': 0,
             'crm_converted': 0,
+            'resolution_rate': 0.0,
+            'avg_response_time': 0.0,
         }
 
+    total = len(df)
+
+    # Métricas Existentes
     metrics = {
-        'total_contacts': len(df),
-        'ai_conversations': len(df[df['bot_messages'] > 0]),
+        'total_contacts': total,
+        'ai_conversations': len(df[df['has_human_intervention'] == False]) if 'has_human_intervention' in df.columns else len(df[df['bot_messages'] > 0]),
+        'human_conversations': len(df[df['has_human_intervention'] == True]) if 'has_human_intervention' in df.columns else 0,
         'leads': len(df[df['is_lead'] == True]),
         'visits_scheduled': len(df[df['visit_scheduled'] == True]),
         'crm_converted': len(df[df['crm_converted'] == True]),
     }
+
+    # NOVAS - Métricas de Qualidade [FASE 5.5]
+    if 'is_resolved' in df.columns:
+        resolved_count = len(df[df['is_resolved'] == True])
+        metrics['resolution_rate'] = (resolved_count / total * 100) if total > 0 else 0.0
+    else:
+        metrics['resolution_rate'] = 0.0
+
+    # Tempo resposta médio (em minutos)
+    if 'first_response_time_minutes' in df.columns:
+        valid_times = df[df['first_response_time_minutes'].notna()]['first_response_time_minutes']
+        metrics['avg_response_time'] = valid_times.mean() if len(valid_times) > 0 else 0.0
+    else:
+        metrics['avg_response_time'] = 0.0
 
     return metrics
 
@@ -296,6 +327,38 @@ def prepare_score_distribution(df):
     score_dist = score_dist.sort_values('_order').drop('_order', axis=1)
 
     return score_dist
+
+
+def prepare_period_distribution(df):
+    """
+    Prepara dados de distribuição de conversas por período do dia
+    [FASE 5.5 - NOVA FUNÇÃO]
+
+    Args:
+        df: DataFrame com conversas
+
+    Returns:
+        pd.DataFrame: Distribuição por período (Manhã/Tarde/Noite/Madrugada)
+    """
+    if df.empty or 'conversation_period' not in df.columns:
+        return pd.DataFrame(columns=['Período', 'Quantidade'])
+
+    # Filtrar períodos válidos (não nulos)
+    period_df = df[df['conversation_period'].notna()].copy()
+
+    if period_df.empty:
+        return pd.DataFrame(columns=['Período', 'Quantidade'])
+
+    # Agrupar por período
+    period_dist = period_df.groupby('conversation_period').size().reset_index(name='Quantidade')
+    period_dist.rename(columns={'conversation_period': 'Período'}, inplace=True)
+
+    # Ordenar por ordem lógica dos períodos
+    period_order = {'Manhã': 1, 'Tarde': 2, 'Noite': 3, 'Madrugada': 4}
+    period_dist['_order'] = period_dist['Período'].map(period_order).fillna(99)
+    period_dist = period_dist.sort_values('_order').drop('_order', axis=1)
+
+    return period_dist
 
 
 def prepare_csv_export(df):
@@ -529,6 +592,88 @@ def render_score_distribution_chart(score_dist):
             st.write(f"- **{row['Classificação']}**: {row['Quantidade']} leads")
 
 
+def render_quality_metrics(metrics, df):
+    """
+    Renderiza métricas de qualidade (IA%, Resolução%, Tempo Resposta)
+    [FASE 5.5 - NOVA FUNÇÃO]
+
+    Args:
+        metrics: Dict com métricas calculadas
+        df: DataFrame com conversas
+    """
+    st.divider()
+    st.subheader("⚙️ Métricas de Qualidade")
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    total = len(df) if not df.empty else 1
+
+    with col1:
+        pct_ai = (metrics['ai_conversations'] / total * 100) if total > 0 else 0
+        st.metric(
+            "Conversas IA %",
+            f"{pct_ai:.1f}%",
+            help="Percentual de conversas 100% automáticas (sem intervenção humana)"
+        )
+
+    with col2:
+        st.metric(
+            "Taxa Resolução",
+            f"{metrics['resolution_rate']:.1f}%",
+            help="Percentual de conversas resolvidas"
+        )
+
+    with col3:
+        # Converter minutos para horas se > 60
+        avg_time = metrics['avg_response_time']
+        if avg_time >= 60:
+            time_display = f"{avg_time/60:.1f}h"
+        else:
+            time_display = f"{avg_time:.0f}min"
+
+        st.metric(
+            "Tempo Resposta",
+            time_display,
+            help="Tempo médio da primeira resposta"
+        )
+
+    with col4:
+        # Engagement = conversas com mensagens / total
+        pct_engagement = (metrics['total_contacts'] / total * 100) if total > 0 else 0
+        st.metric(
+            "Engagement %",
+            f"{pct_engagement:.1f}%",
+            help="Percentual de contatos que enviaram mensagens"
+        )
+
+
+def render_period_distribution_chart(period_dist):
+    """
+    Renderiza gráfico de distribuição por período do dia
+    [FASE 5.5 - NOVA FUNÇÃO]
+
+    Args:
+        period_dist: DataFrame com distribuição de períodos
+    """
+    if period_dist.empty:
+        st.info("ℹ️ Nenhum dado para exibir")
+        return
+
+    st.subheader("🕐 Distribuição por Período do Dia")
+
+    # Gráfico de barras
+    st.bar_chart(period_dist.set_index('Período')['Quantidade'], use_container_width=True)
+
+    # Resumo em colunas
+    col1, col2, col3, col4 = st.columns(4)
+    cols = [col1, col2, col3, col4]
+
+    for idx, (_, row) in enumerate(period_dist.iterrows()):
+        if idx < 4:
+            with cols[idx]:
+                st.metric(row['Período'], f"{row['Quantidade']}")
+
+
 def render_leads_table(df, tenant_name, date_start, date_end):
     """
     Renderiza tabela de leads com botão de exportação
@@ -755,6 +900,11 @@ def show_client_dashboard(session, tenant_id=None):
 
     st.divider()
 
+    # === MÉTRICAS DE QUALIDADE === [FASE 5.5 - NOVO]
+    render_quality_metrics(metrics, df)
+
+    st.divider()
+
     # === GRÁFICOS ===
     st.subheader("📊 Análise de Leads")
 
@@ -774,6 +924,12 @@ def show_client_dashboard(session, tenant_id=None):
     with col2:
         score_dist = prepare_score_distribution(df)
         render_score_distribution_chart(score_dist)
+
+    st.divider()
+
+    # === DISTRIBUIÇÃO POR PERÍODO === [FASE 5.5 - NOVO]
+    period_dist = prepare_period_distribution(df)
+    render_period_distribution_chart(period_dist)
 
     st.divider()
 
