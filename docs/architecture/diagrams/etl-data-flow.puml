@@ -1,0 +1,96 @@
+@startuml ETL_Data_Flow
+!define RECTANGLE class
+
+skinparam backgroundColor #FEFEFE
+skinparam shadowing false
+
+title Fluxo de Dados - ETL Pipeline V3 Incremental
+
+actor "Scheduler\n(Cron/Systemd)" as scheduler
+participant "ETL Pipeline\nOrchestrator" as orchestrator
+database "etl_control\n(Auditoria)" as audit
+participant "Watermark\nManager" as watermark
+participant "Extractor" as extractor
+database "Chatwoot DB\n(Remoto)" as source_db
+participant "Transformer" as transformer
+participant "Loader" as loader
+database "PostgreSQL Local\n(Analytics)" as local_db
+participant "Logger" as logger
+
+== Inicialização ==
+scheduler -> orchestrator: Dispara ETL (horária)
+activate orchestrator
+
+orchestrator -> logger: Configura logging
+orchestrator -> audit: Cria registro execução
+audit --> orchestrator: execution_id
+
+orchestrator -> watermark: get_last_watermark()
+activate watermark
+watermark -> local_db: SELECT MAX(updated_at)\nFROM etl_control\nWHERE status='success'
+local_db --> watermark: 2025-11-10 10:00:00
+watermark --> orchestrator: watermark_start
+deactivate watermark
+
+== Fase 1: Extract ==
+orchestrator -> extractor: extract_incremental(watermark_start)
+activate extractor
+
+extractor -> source_db: SELECT * FROM vw_conversations_analytics_final\nWHERE updated_at > '2025-11-10 10:00:00'\nORDER BY updated_at ASC
+source_db --> extractor: 1.542 rows (118 campos)
+
+extractor -> logger: Log: Extraídos 1.542 registros
+extractor --> orchestrator: DataFrame[1542 rows x 118 cols]
+deactivate extractor
+
+== Fase 2: Transform ==
+orchestrator -> transformer: transform_data(df_raw)
+activate transformer
+
+transformer -> transformer: Renomeia colunas
+transformer -> transformer: Converte tipos (datetime, JSON, int)
+transformer -> transformer: Limpa dados (strip, lowercase)
+transformer -> transformer: Valida campos obrigatórios
+transformer -> transformer: Adiciona metadados ETL
+
+transformer -> logger: Log: 1.542 válidos, 0 inválidos
+transformer --> orchestrator: DataFrame[1542 rows x 121 cols]
+deactivate transformer
+
+== Fase 3: Load ==
+orchestrator -> loader: load_upsert(df_transformed)
+activate loader
+
+loader -> loader: Divide em batches (1000 rows)
+loader -> local_db: BEGIN TRANSACTION
+
+loop Para cada batch
+    loader -> local_db: INSERT INTO conversations_analytics\nVALUES (...) \nON CONFLICT (conversation_id)\nDO UPDATE SET ...
+    local_db --> loader: 1000 rows affected
+end
+
+loader -> local_db: COMMIT
+loader -> logger: Log: 1.542 inseridos/atualizados
+loader --> orchestrator: success=True, count=1542
+deactivate loader
+
+== Fase 4: Finalização ==
+orchestrator -> watermark: update_etl_execution(execution_id, status='success')
+activate watermark
+watermark -> local_db: UPDATE etl_control\nSET status='success',\n    rows_extracted=1542,\n    rows_loaded=1542,\n    watermark_end='2025-11-10 11:00:00',\n    ended_at=NOW()
+watermark --> orchestrator: Atualizado
+deactivate watermark
+
+orchestrator -> logger: Log: ETL concluído com sucesso
+orchestrator --> scheduler: Success (exit 0)
+deactivate orchestrator
+
+note right of local_db
+  **Resultado:**
+  - 1.542 conversas atualizadas
+  - Watermark: 2025-11-10 11:00:00
+  - Duração: 2-5 segundos
+  - Próxima execução: 12:00:00
+end note
+
+@enduml
