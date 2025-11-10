@@ -20,7 +20,8 @@ import json
 import time
 import logging
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Dict, Optional, List, Tuple
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import pandas as pd
 from openai import OpenAI
 
@@ -191,6 +192,9 @@ Retorne APENAS o JSON, sem texto adicional antes ou depois."""
             logger.warning(f"Texto de mensagem vazio ou inválido para tenant {self.tenant_id}")
             return result
 
+        # SANITIZAR texto de entrada (remover NULL bytes antes de enviar para OpenAI)
+        message_text = self._sanitize_text(message_text)
+
         if len(message_text) < 10:
             logger.debug(f"Texto muito curto ({len(message_text)} chars), retornando default")
             return result
@@ -284,6 +288,27 @@ Analise esta conversa e retorne o JSON com as informações solicitadas."""
         logger.error(f"Falha após {self.MAX_RETRIES} tentativas para tenant {self.tenant_id}")
         return None
 
+    def _sanitize_text(self, text: str) -> str:
+        """
+        Remove NULL bytes e caracteres inválidos para PostgreSQL.
+
+        Args:
+            text: Texto a ser sanitizado
+
+        Returns:
+            Texto limpo sem NULL bytes
+        """
+        if not text:
+            return ''
+
+        # Remover NULL bytes (0x00) - causam erro no PostgreSQL
+        text = text.replace('\x00', '')
+
+        # Remover outros caracteres de controle problemáticos (opcional)
+        # text = ''.join(char for char in text if ord(char) >= 32 or char in '\n\r\t')
+
+        return text
+
     def _process_openai_response(self, analysis: Dict) -> Dict:
         """
         Processa resposta da OpenAI e converte para formato padrão.
@@ -314,7 +339,7 @@ Analise esta conversa e retorne o JSON com as informações solicitadas."""
         # Determinar CRM converted (probabilidade == 5 geralmente indica conversão)
         crm_converted = (prob_openai == 5)
 
-        # Montar resultado
+        # Montar resultado (sanitizar todos os campos de texto)
         result = {
             # Campos padrão (BaseAnalyzer)
             'is_lead': is_lead,
@@ -323,12 +348,12 @@ Analise esta conversa e retorne o JSON com as informações solicitadas."""
             'ai_probability_label': self._score_to_label(score),
             'ai_probability_score': score,
 
-            # Campos específicos OpenAI
-            'nome_mapeado_bot': analysis.get('nome_mapeado_bot', ''),
-            'condicao_fisica': analysis.get('condicao_fisica', 'Não mencionado'),
-            'objetivo': analysis.get('objetivo', 'Não mencionado'),
-            'analise_ia': analysis.get('analise_ia', ''),
-            'sugestao_disparo': analysis.get('sugestao_disparo', ''),
+            # Campos específicos OpenAI (SANITIZAR para remover NULL bytes)
+            'nome_mapeado_bot': self._sanitize_text(analysis.get('nome_mapeado_bot', '')),
+            'condicao_fisica': self._sanitize_text(analysis.get('condicao_fisica', 'Não mencionado')),
+            'objetivo': self._sanitize_text(analysis.get('objetivo', 'Não mencionado')),
+            'analise_ia': self._sanitize_text(analysis.get('analise_ia', '')),
+            'sugestao_disparo': self._sanitize_text(analysis.get('sugestao_disparo', '')),
             'probabilidade_conversao': prob_openai,
         }
 
@@ -336,7 +361,7 @@ Analise esta conversa e retorne o JSON com as informações solicitadas."""
 
         return result
 
-    def analyze_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
+    def analyze_dataframe(self, df: pd.DataFrame, skip_analyzed: bool = True) -> pd.DataFrame:
         """
         Analisa um DataFrame completo de conversas.
 
@@ -345,6 +370,8 @@ Analise esta conversa e retorne o JSON com as informações solicitadas."""
                 - message_compiled (texto das mensagens)
                 - contact_name (opcional)
                 - contact_messages_count (opcional)
+                - analise_ia (opcional - para skip_analyzed)
+            skip_analyzed: Se True, pula conversas que já têm analise_ia preenchida
 
         Returns:
             DataFrame com colunas de análise adicionadas
@@ -353,41 +380,116 @@ Analise esta conversa e retorne o JSON com as informações solicitadas."""
             logger.warning("DataFrame vazio recebido para análise")
             return df
 
-        logger.info(f"Analisando {len(df)} conversas com OpenAI para tenant {self.tenant_id}")
+        total_rows = len(df)
+
+        # Filtrar conversas que precisam ser analisadas
+        if skip_analyzed and 'analise_ia' in df.columns:
+            # Identificar conversas que NÃO têm análise (analise_ia vazio ou NULL)
+            needs_analysis = (df['analise_ia'].isna()) | (df['analise_ia'] == '')
+            df_to_analyze = df[needs_analysis].copy()
+            df_already_analyzed = df[~needs_analysis].copy()
+
+            skipped = len(df_already_analyzed)
+            to_process = len(df_to_analyze)
+
+            logger.info(f"Total conversas: {total_rows}")
+            logger.info(f"  ✅ Já analisadas (pulando): {skipped}")
+            logger.info(f"  🔄 Pendentes (processando): {to_process}")
+
+            if to_process == 0:
+                logger.info("Todas as conversas já foram analisadas! Nada a fazer.")
+                return df
+        else:
+            df_to_analyze = df.copy()
+            df_already_analyzed = pd.DataFrame()
+            to_process = total_rows
+            logger.info(f"Analisando {to_process} conversas com OpenAI para tenant {self.tenant_id}")
+
         start_time = time.time()
 
-        # Aplicar análise linha por linha
-        results = df.apply(
-            lambda row: self.analyze_conversation(
-                message_text=row.get('message_compiled', None),
-                contact_name=row.get('contact_name', None),
-                message_count=row.get('contact_messages_count', 0),
-            ),
-            axis=1
-        )
+        # PROCESSAMENTO PARALELO - 5 workers simultâneos
+        logger.info(f"🚀 Iniciando processamento PARALELO com 5 workers...")
 
-        # Extrair campos
-        df['is_lead'] = results.apply(lambda x: x['is_lead'])
-        df['visit_scheduled'] = results.apply(lambda x: x['visit_scheduled'])
-        df['crm_converted'] = results.apply(lambda x: x['crm_converted'])
-        df['ai_probability_label'] = results.apply(lambda x: x['ai_probability_label'])
-        df['ai_probability_score'] = results.apply(lambda x: x['ai_probability_score'])
+        results_list = []
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            # Criar futures para cada conversa
+            future_to_idx = {
+                executor.submit(
+                    self.analyze_conversation,
+                    message_text=row.get('message_compiled', None),
+                    contact_name=row.get('contact_name', None),
+                    message_count=row.get('contact_messages_count', 0)
+                ): idx
+                for idx, row in df_to_analyze.iterrows()
+            }
+
+            # Processar resultados conforme completam
+            completed = 0
+            for future in as_completed(future_to_idx):
+                idx = future_to_idx[future]
+                try:
+                    result = future.result(timeout=30)  # 30s timeout por conversa
+                    results_list.append((idx, result))
+                    completed += 1
+
+                    # Log progresso a cada 10 conversas
+                    if completed % 10 == 0:
+                        elapsed = time.time() - start_time
+                        rate = completed / elapsed if elapsed > 0 else 0
+                        eta = (to_process - completed) / rate if rate > 0 else 0
+                        logger.info(f"  ⏳ {completed}/{to_process} ({completed/to_process*100:.1f}%) - "
+                                  f"{rate:.1f} conv/s - ETA: {eta/60:.1f} min")
+                except Exception as e:
+                    logger.error(f"Erro ao processar conversa {idx}: {e}")
+                    # Resultado default em caso de erro
+                    results_list.append((idx, {
+                        'is_lead': False,
+                        'visit_scheduled': False,
+                        'crm_converted': False,
+                        'ai_probability_label': 'N/A',
+                        'ai_probability_score': 0.0,
+                        'nome_mapeado_bot': '',
+                        'condicao_fisica': 'Não mencionado',
+                        'objetivo': 'Não mencionado',
+                        'analise_ia': '',
+                        'sugestao_disparo': '',
+                        'probabilidade_conversao': 0,
+                    }))
+
+        # Ordenar resultados pelo índice original
+        results_list.sort(key=lambda x: x[0])
+        results = pd.Series([r[1] for r in results_list], index=[r[0] for r in results_list])
+
+        # Extrair campos APENAS para df_to_analyze
+        df_to_analyze['is_lead'] = results.apply(lambda x: x['is_lead'])
+        df_to_analyze['visit_scheduled'] = results.apply(lambda x: x['visit_scheduled'])
+        df_to_analyze['crm_converted'] = results.apply(lambda x: x['crm_converted'])
+        df_to_analyze['ai_probability_label'] = results.apply(lambda x: x['ai_probability_label'])
+        df_to_analyze['ai_probability_score'] = results.apply(lambda x: x['ai_probability_score'])
 
         # Campos adicionais OpenAI
-        df['nome_mapeado_bot'] = results.apply(lambda x: x.get('nome_mapeado_bot', ''))
-        df['condicao_fisica'] = results.apply(lambda x: x.get('condicao_fisica', 'Não mencionado'))
-        df['objetivo'] = results.apply(lambda x: x.get('objetivo', 'Não mencionado'))
-        df['analise_ia'] = results.apply(lambda x: x.get('analise_ia', ''))
-        df['sugestao_disparo'] = results.apply(lambda x: x.get('sugestao_disparo', ''))
-        df['probabilidade_conversao'] = results.apply(lambda x: x.get('probabilidade_conversao', 0))
+        df_to_analyze['nome_mapeado_bot'] = results.apply(lambda x: x.get('nome_mapeado_bot', ''))
+        df_to_analyze['condicao_fisica'] = results.apply(lambda x: x.get('condicao_fisica', 'Não mencionado'))
+        df_to_analyze['objetivo'] = results.apply(lambda x: x.get('objetivo', 'Não mencionado'))
+        df_to_analyze['analise_ia'] = results.apply(lambda x: x.get('analise_ia', ''))
+        df_to_analyze['sugestao_disparo'] = results.apply(lambda x: x.get('sugestao_disparo', ''))
+        df_to_analyze['probabilidade_conversao'] = results.apply(lambda x: x.get('probabilidade_conversao', 0))
+
+        # Combinar DataFrames (analisadas + já existentes)
+        if not df_already_analyzed.empty:
+            df_final = pd.concat([df_to_analyze, df_already_analyzed], ignore_index=False)
+            # Restaurar ordem original
+            df_final = df_final.loc[df.index]
+        else:
+            df_final = df_to_analyze
 
         # Estatísticas
-        lead_count = df['is_lead'].sum()
-        visit_count = df['visit_scheduled'].sum()
-        conversion_count = df['crm_converted'].sum()
+        lead_count = df_to_analyze['is_lead'].sum()
+        visit_count = df_to_analyze['visit_scheduled'].sum()
+        conversion_count = df_to_analyze['crm_converted'].sum()
 
         elapsed = time.time() - start_time
-        avg_time = elapsed / len(df) if len(df) > 0 else 0
+        avg_time = elapsed / to_process if to_process > 0 else 0
 
         logger.info(f"Análise OpenAI concluída: {lead_count} leads, "
                    f"{visit_count} visitas, {conversion_count} conversões")
@@ -396,7 +498,7 @@ Analise esta conversa e retorne o JSON com as informações solicitadas."""
                    f"{self.stats['failed_calls']} falhas, "
                    f"{self.stats['total_tokens']} tokens")
 
-        return df
+        return df_final
 
     def get_usage_stats(self) -> Dict:
         """
