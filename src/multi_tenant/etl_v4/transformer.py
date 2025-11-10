@@ -9,10 +9,11 @@ Funcionalidades:
     - Normalizar tipos de dados
     - Mapeamento de colunas (remoto → local)
     - Usar proxies temporários para colunas ausentes
+    - Análise de leads (Regex ou OpenAI)
     - Logging estruturado
 
 Autor: Isaac (via Claude Code)
-Data: 2025-11-06
+Data: 2025-11-09 (Updated: Fase 5.6 - OpenAI Integration)
 """
 
 import logging
@@ -22,8 +23,8 @@ from typing import Dict, List, Any, Optional
 import pandas as pd
 import numpy as np
 
-# Importar LeadAnalyzer (Fase 4)
-from .lead_analyzer import LeadAnalyzer
+# Importar Analyzers (Fase 5.6)
+from .analyzers import AnalyzerFactory, BaseAnalyzer
 
 # Configurar logging estruturado
 logging.basicConfig(
@@ -36,24 +37,43 @@ logger = logging.getLogger(__name__)
 class ConversationTransformer:
     """Transforma dados de conversas do formato remoto para o formato local"""
 
-    def __init__(self, tenant_id: int, enable_lead_analysis: bool = True):
+    def __init__(
+        self,
+        tenant_id: int,
+        enable_lead_analysis: bool = True,
+        use_openai: bool = False,
+        openai_api_key: Optional[str] = None,
+        openai_model: Optional[str] = None
+    ):
         """
         Inicializa o transformer.
 
         Args:
             tenant_id: ID do tenant para o qual os dados serão transformados
-            enable_lead_analysis: Se deve aplicar análise de leads (Fase 4)
+            enable_lead_analysis: Se deve aplicar análise de leads (default: True)
+            use_openai: Se deve usar OpenAI para análise (default: False = Regex)
+            openai_api_key: OpenAI API key (obrigatória se use_openai=True)
+            openai_model: Modelo OpenAI (opcional, default: gpt-4o-mini)
         """
         self.tenant_id = tenant_id
         self.enable_lead_analysis = enable_lead_analysis
+        self.use_openai = use_openai
 
-        # Inicializar LeadAnalyzer se habilitado (Fase 4)
+        # Inicializar Analyzer se habilitado (Fase 5.6)
         if self.enable_lead_analysis:
-            self.lead_analyzer = LeadAnalyzer(tenant_id=tenant_id)
-            logger.info(f"ConversationTransformer inicializado para tenant {tenant_id} COM análise de leads")
+            self.lead_analyzer = AnalyzerFactory.create_analyzer(
+                tenant_id=tenant_id,
+                use_openai=use_openai,
+                openai_api_key=openai_api_key
+            )
+
+            analyzer_type = "OpenAI" if use_openai else "Regex"
+            logger.info(f"ConversationTransformer inicializado para tenant {tenant_id} "
+                       f"COM análise de leads ({analyzer_type})")
         else:
             self.lead_analyzer = None
-            logger.info(f"ConversationTransformer inicializado para tenant {tenant_id} SEM análise de leads")
+            logger.info(f"ConversationTransformer inicializado para tenant {tenant_id} "
+                       f"SEM análise de leads")
 
     def transform_chunk(self, df: pd.DataFrame) -> pd.DataFrame:
         """
