@@ -197,7 +197,10 @@ class WatermarkManager:
                 records_updated = :records_updated,
                 records_failed = :records_failed,
                 error_message = :error_message,
-                error_details = :error_details
+                error_details = :error_details,
+                openai_api_calls = :openai_api_calls,
+                openai_total_tokens = :openai_total_tokens,
+                openai_cost_brl = :openai_cost_brl
             WHERE id = :execution_id
         """)
 
@@ -212,16 +215,29 @@ class WatermarkManager:
                     'records_updated': stats.get('records_updated', 0),
                     'records_failed': stats.get('records_failed', 0),
                     'error_message': error_message,
-                    'error_details': error_details
+                    'error_details': error_details,
+                    'openai_api_calls': stats.get('openai_api_calls', 0),
+                    'openai_total_tokens': stats.get('openai_total_tokens', 0),
+                    'openai_cost_brl': stats.get('openai_cost_brl', 0.0)
                 }
             )
 
-        logger.info(
+        log_msg = (
             f"Execução {execution_id} atualizada: status={status}, "
             f"extracted={stats.get('records_extracted', 0)}, "
             f"inserted={stats.get('records_inserted', 0)}, "
             f"updated={stats.get('records_updated', 0)}"
         )
+
+        # Adicionar info OpenAI ao log se houver
+        if stats.get('openai_api_calls', 0) > 0:
+            log_msg += (
+                f", openai_calls={stats.get('openai_api_calls', 0)}, "
+                f"openai_tokens={stats.get('openai_total_tokens', 0)}, "
+                f"openai_cost=R$ {stats.get('openai_cost_brl', 0.0):.4f}"
+            )
+
+        logger.info(log_msg)
 
     def acquire_lock(self, tenant_id: int, timeout_seconds: int = 0) -> bool:
         """

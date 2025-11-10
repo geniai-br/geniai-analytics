@@ -94,6 +94,46 @@ class ETLPipeline:
         logger.info(f"Engine local criada: {host}:{port}/{database}")
         return engine
 
+    def _get_tenant_config(self, tenant_id: int) -> Dict[str, Any]:
+        """
+        Busca configuração do tenant no banco.
+
+        Args:
+            tenant_id: ID do tenant
+
+        Returns:
+            Dict com configuração do tenant
+        """
+        query = text("""
+            SELECT
+                tc.features,
+                t.name as tenant_name
+            FROM tenant_configs tc
+            JOIN tenants t ON t.id = tc.tenant_id
+            WHERE tc.tenant_id = :tenant_id
+        """)
+
+        with self.local_engine.connect() as conn:
+            result = conn.execute(query, {'tenant_id': tenant_id})
+            row = result.fetchone()
+
+            if not row:
+                logger.warning(f"Configuração não encontrada para tenant {tenant_id}, usando defaults")
+                return {
+                    'tenant_name': f'Tenant {tenant_id}',
+                    'use_openai': False,
+                    'features': {}
+                }
+
+            features = row[0] if row[0] else {}
+            tenant_name = row[1]
+
+            return {
+                'tenant_name': tenant_name,
+                'use_openai': features.get('use_openai', False),
+                'features': features
+            }
+
     def run_for_tenant(
         self,
         tenant_id: int,
@@ -125,8 +165,23 @@ class ETLPipeline:
         execution_id = None
         lock_acquired = False
 
+        # Estatísticas OpenAI (rastreadas ao longo da execução)
+        openai_stats = {
+            'api_calls': 0,
+            'total_tokens': 0,
+            'cost_brl': 0.0
+        }
+
         try:
-            # 1. Adquirir lock (evitar execução simultânea)
+            # 1. Ler configuração do tenant
+            tenant_config = self._get_tenant_config(tenant_id)
+            use_openai = tenant_config['use_openai']
+            tenant_name = tenant_config['tenant_name']
+
+            logger.info(f"Tenant: {tenant_name} (ID: {tenant_id})")
+            logger.info(f"Analyzer: {'OpenAI GPT-4o-mini' if use_openai else 'Regex (keywords)'}")
+
+            # 2. Adquirir lock (evitar execução simultânea)
             logger.info("Adquirindo lock...")
             if not self.watermark_manager.acquire_lock(tenant_id):
                 raise Exception(
@@ -135,7 +190,7 @@ class ETLPipeline:
                 )
             lock_acquired = True
 
-            # 2. Determinar watermark
+            # 3. Determinar watermark
             watermark_start = None
             load_type = 'full'
 
@@ -151,7 +206,7 @@ class ETLPipeline:
 
             watermark_end = datetime.now()
 
-            # 3. Criar registro de execução
+            # 4. Criar registro de execução
             execution_id = self.watermark_manager.create_execution(
                 tenant_id=tenant_id,
                 load_type=load_type,
@@ -162,7 +217,7 @@ class ETLPipeline:
 
             logger.info(f"Execução {execution_id} criada")
 
-            # 4. EXTRACT - Extrair dados do banco remoto
+            # 5. EXTRACT - Extrair dados do banco remoto
             logger.info("FASE 1: EXTRACT")
             logger.info("-" * 80)
 
@@ -171,8 +226,16 @@ class ETLPipeline:
             total_updated = 0
             chunk_count = 0
 
-            # Criar transformer e loader
-            transformer = ConversationTransformer(tenant_id=tenant_id)
+            # 6. Criar transformer com config do tenant (Fase 5.6 - OpenAI)
+            openai_api_key = os.getenv('OPENAI_API_KEY') if use_openai else None
+
+            transformer = ConversationTransformer(
+                tenant_id=tenant_id,
+                enable_lead_analysis=True,
+                use_openai=use_openai,
+                openai_api_key=openai_api_key
+            )
+
             loader = ConversationLoader(self.local_engine)
 
             # Extrair em chunks
@@ -189,11 +252,19 @@ class ETLPipeline:
 
                 logger.info(f"Chunk {chunk_count}: {chunk_size_actual} conversas extraídas")
 
-                # 5. TRANSFORM - Transformar dados
+                # 7. TRANSFORM - Transformar dados
                 logger.info(f"Chunk {chunk_count}: TRANSFORM")
                 df_transformed = transformer.transform_chunk(chunk)
 
-                # 6. LOAD - Carregar dados
+                # 7.1 Coletar estatísticas OpenAI (se usando OpenAI)
+                if use_openai and hasattr(transformer, 'lead_analyzer'):
+                    analyzer = transformer.lead_analyzer
+                    if hasattr(analyzer, 'get_usage_stats'):
+                        usage = analyzer.get_usage_stats()
+                        openai_stats['api_calls'] += usage.get('successful_calls', 0)
+                        openai_stats['total_tokens'] += usage.get('total_tokens', 0)
+
+                # 8. LOAD - Carregar dados
                 logger.info(f"Chunk {chunk_count}: LOAD")
                 load_stats = loader.load_chunk(df_transformed)
 
@@ -206,12 +277,30 @@ class ETLPipeline:
                     f"{load_stats['updated']} atualizadas"
                 )
 
-            # 7. Atualizar registro de execução (sucesso)
+            # 9. Calcular custo OpenAI (se usado)
+            if openai_stats['total_tokens'] > 0:
+                # Custo aproximado: R$ 0.0004 por 1K tokens (GPT-4o-mini)
+                # Taxa USD -> BRL: ~5.50
+                cost_per_1k_tokens_usd = 0.0004
+                usd_to_brl = 5.50
+                openai_stats['cost_brl'] = round(
+                    (openai_stats['total_tokens'] / 1000.0) * cost_per_1k_tokens_usd * usd_to_brl,
+                    4
+                )
+
+                logger.info(f"OpenAI Stats: {openai_stats['api_calls']} calls, "
+                           f"{openai_stats['total_tokens']} tokens, "
+                           f"R$ {openai_stats['cost_brl']:.4f}")
+
+            # 10. Atualizar registro de execução (sucesso)
             stats = {
                 'records_extracted': total_extracted,
                 'records_inserted': total_inserted,
                 'records_updated': total_updated,
-                'records_failed': 0
+                'records_failed': 0,
+                'openai_api_calls': openai_stats['api_calls'],
+                'openai_total_tokens': openai_stats['total_tokens'],
+                'openai_cost_brl': openai_stats['cost_brl']
             }
 
             self.watermark_manager.update_execution(

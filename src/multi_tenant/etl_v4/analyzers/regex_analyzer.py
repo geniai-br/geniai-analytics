@@ -1,23 +1,24 @@
 """
-Lead Analyzer - ETL V4 Multi-Tenant
-====================================
+Regex Analyzer - ETL V4 Multi-Tenant
+=====================================
 
-Responsável por analisar conversas e detectar:
+Responsável por analisar conversas usando regex/keywords para detectar:
 - Leads qualificados (interesse real em comprar/contratar)
 - Visitas agendadas (dia/hora marcados)
 - Conversões CRM (venda confirmada, contrato assinado)
 
 Usa análise de keywords, padrões regex e regras de negócio.
 
-Fase: 4 - Dashboard Cliente Avançado
+Fase: 5.6 - OpenAI Integration (refatorado para Adapter Pattern)
 Autor: Isaac (via Claude Code)
-Data: 2025-11-06
+Data: 2025-11-09
 """
 
 import logging
 import re
 from typing import Dict, List, Optional, Tuple
 import pandas as pd
+from .base_analyzer import BaseAnalyzer
 
 # Configurar logging estruturado
 logging.basicConfig(
@@ -27,7 +28,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-class LeadAnalyzer:
+class RegexAnalyzer(BaseAnalyzer):
     """Analisa conversas para detectar leads, visitas e conversões"""
 
     # ========================================================================
@@ -183,12 +184,12 @@ class LeadAnalyzer:
 
     def __init__(self, tenant_id: int):
         """
-        Inicializa o analisador de leads.
+        Inicializa o analisador de leads com regex.
 
         Args:
             tenant_id: ID do tenant (para logging e configs futuras)
         """
-        self.tenant_id = tenant_id
+        super().__init__(tenant_id)
 
         # Compilar regex para performance
         self.lead_patterns = [re.compile(pattern, re.IGNORECASE) for pattern in self.LEAD_KEYWORDS]
@@ -196,7 +197,6 @@ class LeadAnalyzer:
         self.conversion_patterns = [re.compile(pattern, re.IGNORECASE) for pattern in self.CONVERSION_KEYWORDS]
         self.negative_patterns = [re.compile(pattern, re.IGNORECASE) for pattern in self.NEGATIVE_KEYWORDS]
 
-        logger.info(f"LeadAnalyzer inicializado para tenant {tenant_id}")
         logger.info(f"Padrões carregados: {len(self.lead_patterns)} lead, "
                    f"{len(self.visit_patterns)} visit, "
                    f"{len(self.conversion_patterns)} conversion")
@@ -486,7 +486,7 @@ def add_lead_analysis(df: pd.DataFrame, tenant_id: int) -> pd.DataFrame:
     Returns:
         DataFrame com colunas de análise adicionadas
     """
-    analyzer = LeadAnalyzer(tenant_id=tenant_id)
+    analyzer = RegexAnalyzer(tenant_id=tenant_id)
     df_analyzed = analyzer.analyze_dataframe(df)
 
     # Mostrar estatísticas
@@ -536,7 +536,7 @@ if __name__ == "__main__":
     ])
 
     # Analisar
-    analyzer = LeadAnalyzer(tenant_id=1)
+    analyzer = RegexAnalyzer(tenant_id=1)
     result = analyzer.analyze_dataframe(test_data)
 
     # Exibir resultados
