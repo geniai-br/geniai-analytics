@@ -1,0 +1,118 @@
+@startuml Auth_Flow_MultiTenant
+
+skinparam backgroundColor #FEFEFE
+skinparam shadowing false
+
+title Fluxo de Autenticação Multi-Tenant com RLS
+
+actor "Usuário" as user
+participant "Login Page\n(Streamlit)" as login
+participant "Auth Core" as auth
+database "PostgreSQL\n(users, sessions)" as db
+participant "Middleware" as middleware
+participant "RLS Manager" as rls
+participant "Dashboard\n(Cliente/Admin)" as dashboard
+
+== Fase 1: Login ==
+user -> login: Acessa http://localhost:8504
+activate login
+login -> login: Renderiza formulário
+
+user -> login: Submete email + senha
+login -> auth: authenticate_user(email, password)
+activate auth
+
+auth -> db: SELECT id, password_hash, role, tenant_id\nFROM users\nWHERE email = ? AND is_active = true
+db --> auth: user_record
+
+auth -> auth: bcrypt.checkpw(password, password_hash)
+
+alt Senha válida
+    auth -> db: INSERT INTO sessions\n(user_id, session_id, ip_address, expires_at)\nVALUES (?, UUID(), ?, NOW() + '24 hours')
+    db --> auth: session_created
+
+    auth -> db: UPDATE users\nSET last_login = NOW()\nWHERE id = ?
+
+    auth --> login: {success: true, session_id: UUID, role: 'admin', tenant_id: 1}
+    login -> login: st.session_state.session_id = UUID
+    login -> login: st.session_state.user_data = {...}
+    login --> user: ✅ Redirect para dashboard
+else Senha inválida
+    auth --> login: {success: false, error: 'Credenciais inválidas'}
+    login --> user: ❌ Mensagem de erro
+end
+deactivate auth
+deactivate login
+
+== Fase 2: Acesso Protegido ==
+user -> dashboard: Acessa página (cada request)
+activate dashboard
+
+dashboard -> middleware: require_authentication()
+activate middleware
+
+middleware -> middleware: Verifica st.session_state.session_id
+
+alt Session ID existe
+    middleware -> auth: validate_session(session_id)
+    activate auth
+    auth -> db: SELECT s.*, u.role, u.tenant_id, t.is_active\nFROM sessions s\nJOIN users u ON s.user_id = u.id\nJOIN tenants t ON u.tenant_id = t.id\nWHERE s.id = ? AND s.expires_at > NOW()
+
+    alt Sessão válida
+        db --> auth: {valid: true, user_id: 5, tenant_id: 1, role: 'admin'}
+        auth --> middleware: session_data
+        deactivate auth
+
+        middleware -> rls: set_rls_context(tenant_id=1, user_id=5)
+        activate rls
+        rls -> db: SET LOCAL app.current_tenant_id = 1
+        rls -> db: SET LOCAL app.current_user_id = 5
+        db --> rls: Contexto configurado
+        rls --> middleware: RLS ativo
+        deactivate rls
+
+        middleware --> dashboard: ✅ Acesso permitido
+
+    else Sessão expirada/inválida
+        db --> auth: {valid: false}
+        auth --> middleware: session_invalid
+        deactivate auth
+        middleware -> middleware: clear_session_state()
+        middleware --> user: 🔒 Redirect para /login
+    end
+
+else Session ID não existe
+    middleware -> middleware: clear_session_state()
+    middleware --> user: 🔒 Redirect para /login
+end
+deactivate middleware
+
+== Fase 3: Query com RLS ==
+dashboard -> db: SELECT * FROM conversations_analytics\nWHERE conversation_date >= ?
+note right of db
+  **RLS Automático:**
+  PostgreSQL aplica política:
+  WHERE tenant_id = current_setting('app.current_tenant_id')::INTEGER
+
+  Usuário vê apenas dados do seu tenant!
+end note
+
+db --> dashboard: Apenas registros tenant_id=1
+dashboard --> user: Renderiza KPIs e gráficos
+deactivate dashboard
+
+== Fase 4: Logout ==
+user -> dashboard: Clica "Sair"
+activate dashboard
+dashboard -> auth: logout_user(session_id)
+activate auth
+auth -> db: DELETE FROM sessions WHERE id = ?
+db --> auth: Session removida
+auth --> dashboard: Logout success
+deactivate auth
+
+dashboard -> dashboard: clear_session_state()
+dashboard --> user: Redirect para /login
+deactivate dashboard
+
+@enduml
