@@ -1,8 +1,8 @@
 # 📚 ÍNDICE - DOCUMENTAÇÃO MULTI-TENANT
 
 > **Projeto:** GeniAI Multi-Tenant SaaS Platform
-> **Última Atualização:** 2025-11-05
-> **Status:** 🟢 Fase 1 Completa | 📋 Fase 2 Planejada
+> **Última Atualização:** 2025-11-10
+> **Status:** 🟢 Fase 5.7 Completa | ⚡ Otimizações OpenAI Implementadas
 
 ---
 
@@ -81,6 +81,36 @@ SELECT email, role FROM users ORDER BY tenant_id;
 - ✅ Fase 1: 100% completa (9 tabelas, RLS, 555 conversas migradas)
 - 📋 Fase 2: Revertida e replanejada (2025-11-05)
 - 📈 Progresso visual (barras de status)
+
+---
+
+### 🤖 Integração OpenAI
+
+#### [FASE5_6_IMPLEMENTACAO_OPENAI.md](./FASE5_6_IMPLEMENTACAO_OPENAI.md)
+**O que é:** Implementação inicial da análise OpenAI (Foundation)
+**Quando usar:** Para entender a arquitetura base de análise de leads com IA
+**Destaques:**
+- ✅ Adapter Pattern (BaseAnalyzer, RegexAnalyzer, OpenAIAnalyzer)
+- ✅ Configuração por tenant (use_openai: true/false)
+- ✅ Fallback automático Regex ↔ OpenAI
+- ✅ GPT-4o-mini com 95% accuracy
+
+---
+
+#### [FASE5_7_OTIMIZACOES_OPENAI.md](./FASE5_7_OTIMIZACOES_OPENAI.md) ⭐ **NOVO**
+**O que é:** Otimizações críticas de performance e correção de bugs
+**Quando usar:** Para entender as melhorias de paralelização e estabilidade
+**Destaques:**
+- ⚡ **5x mais rápido**: Processamento paralelo (5 workers)
+- 🛡️ **100% estável**: Sanitização de NULL bytes
+- 💰 **Skip inteligente**: Não reprocessa conversas já analisadas
+- 📊 **742 conversas** analisadas com sucesso (AllpFit)
+- 🔧 Scripts: `watch_etl_parallel.sh`, `test_etl_openai_incremental.py`
+
+**Correções:**
+- ✅ ETL travando por 9+ horas → Resolvido com ThreadPoolExecutor
+- ✅ Crashes por NULL bytes → Resolvido com _sanitize_text()
+- ✅ Reprocessamento desnecessário → Resolvido com skip_analyzed
 
 ---
 
@@ -193,29 +223,43 @@ Cores:
 
 ```
 docs/multi-tenant/
-├── 00_INDEX.md                  # ← Você está aqui
-├── 00_CRONOGRAMA_MASTER.md      # Cronograma 6 fases
-├── 01_ARQUITETURA_DB.md         # Design do banco
-├── 02_UX_FLOW.md                # Fluxos de UX
-├── DB_DOCUMENTATION.md          # Docs do banco (completo)
-├── PROGRESS.md                  # Log de progresso
-└── README.md                    # Introdução
+├── 00_INDEX.md                       # ← Você está aqui
+├── 00_CRONOGRAMA_MASTER.md           # Cronograma 6 fases
+├── 01_ARQUITETURA_DB.md              # Design do banco
+├── 02_UX_FLOW.md                     # Fluxos de UX
+├── DB_DOCUMENTATION.md               # Docs do banco (completo)
+├── PROGRESS.md                       # Log de progresso
+├── FASE5_6_IMPLEMENTACAO_OPENAI.md   # OpenAI - Implementação base
+├── FASE5_7_OTIMIZACOES_OPENAI.md     # OpenAI - Otimizações ⭐ NOVO
+└── README.md                         # Introdução
 
 sql/multi_tenant/
-├── 01_create_database.sql       # Scripts SQL
+├── 01_create_database.sql            # Scripts SQL
 ├── 02_create_schema.sql
 ├── ...
 └── README.md
 
 src/multi_tenant/
-├── auth/                        # (Fase 2 - a implementar)
+├── auth/                             # Autenticação (implementado)
 │   ├── auth.py
 │   └── middleware.py
-└── dashboards/                  # (Fase 2 - a implementar)
-    ├── app.py
-    ├── login_page.py
-    ├── admin_panel.py
-    └── client_dashboard.py
+├── dashboards/                       # Dashboards (implementado)
+│   ├── app.py
+│   ├── login_page.py
+│   ├── admin_panel.py
+│   └── client_dashboard.py
+└── etl_v4/                           # ETL v4 (implementado)
+    ├── analyzers/
+    │   ├── openai_analyzer.py        # ⚡ Otimizado (Fase 5.7)
+    │   ├── regex_analyzer.py
+    │   └── base_analyzer.py
+    ├── pipeline.py
+    ├── transformer.py
+    └── ...
+
+tests/
+├── watch_etl_parallel.sh             # Monitor visual ⭐ NOVO
+└── test_etl_openai_incremental.py    # Teste incremental ⭐ NOVO
 ```
 
 ---
