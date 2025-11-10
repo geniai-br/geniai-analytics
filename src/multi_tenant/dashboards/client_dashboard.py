@@ -71,7 +71,14 @@ def load_conversations(tenant_id, date_start=None, date_end=None, inbox_filter=N
             conversation_period,
             is_weekday,
             is_business_hours,
-            etl_updated_at as synced_at
+            etl_updated_at as synced_at,
+            -- Colunas OpenAI (FASE 5.6)
+            nome_mapeado_bot,
+            condicao_fisica,
+            objetivo,
+            probabilidade_conversao,
+            analise_ia,
+            sugestao_disparo
         FROM conversations_analytics
         WHERE 1=1
     """
@@ -202,6 +209,7 @@ def calculate_metrics(df):
     if df.empty:
         return {
             'total_contacts': 0,
+            'unique_contacts': 0,  # NOVO: contatos únicos
             'ai_conversations': 0,
             'human_conversations': 0,
             'leads': 0,
@@ -213,9 +221,13 @@ def calculate_metrics(df):
 
     total = len(df)
 
+    # Contar contatos únicos (para métrica de engagement)
+    unique_contacts = df['contact_name'].nunique() if 'contact_name' in df.columns else total
+
     # Métricas Existentes
     metrics = {
         'total_contacts': total,
+        'unique_contacts': unique_contacts,  # NOVO: contatos únicos
         'ai_conversations': len(df[df['has_human_intervention'] == False]) if 'has_human_intervention' in df.columns else len(df[df['bot_messages'] > 0]),
         'human_conversations': len(df[df['has_human_intervention'] == True]) if 'has_human_intervention' in df.columns else 0,
         'leads': len(df[df['is_lead'] == True]),
@@ -638,12 +650,19 @@ def render_quality_metrics(metrics, df):
         )
 
     with col4:
-        # Engagement = conversas com mensagens / total
-        pct_engagement = (metrics['total_contacts'] / total * 100) if total > 0 else 0
+        # Engagement = taxa de retorno (contatos únicos vs total de conversas)
+        # Quanto menor que 100%, mais contatos retornam (mais engagement)
+        # 100% = cada contato teve apenas 1 conversa
+        # <100% = contatos retornam (bom engagement)
+        pct_engagement = (metrics['unique_contacts'] / total * 100) if total > 0 else 0
+
+        # Calcular taxa de retorno (inverso do engagement)
+        return_rate = 100 - pct_engagement
+
         st.metric(
-            "Engagement %",
-            f"{pct_engagement:.1f}%",
-            help="Percentual de contatos que enviaram mensagens"
+            "Taxa Retorno",
+            f"{return_rate:.1f}%",
+            help="Percentual de conversas de contatos que retornaram (quanto maior, melhor o engagement)"
         )
 
 
@@ -676,7 +695,7 @@ def render_period_distribution_chart(period_dist):
 
 def render_leads_table(df, tenant_name, date_start, date_end):
     """
-    Renderiza tabela de leads com botão de exportação
+    Renderiza tabela de leads com botão de exportação e modal de análise IA
 
     Args:
         df: DataFrame com conversas
@@ -714,7 +733,8 @@ def render_leads_table(df, tenant_name, date_start, date_end):
         st.info("ℹ️ Nenhum lead encontrado no período selecionado")
         return
 
-    # Selecionar colunas relevantes
+    # Selecionar colunas relevantes (+ OpenAI FASE 5.6)
+    # Criar cópia para exibição e manter dados completos para modal
     display_df = leads_df[[
         'conversation_display_id',
         'contact_name',
@@ -724,7 +744,11 @@ def render_leads_table(df, tenant_name, date_start, date_end):
         'visit_scheduled',
         'crm_converted',
         'ai_probability_label',
-        'ai_probability_score'
+        'ai_probability_score',
+        'nome_mapeado_bot',
+        'condicao_fisica',
+        'objetivo',
+        'probabilidade_conversao'
     ]].copy()
 
     # Renomear colunas
@@ -737,7 +761,11 @@ def render_leads_table(df, tenant_name, date_start, date_end):
         'Visita',
         'CRM',
         'Classificação IA',
-        'Score IA'
+        'Score IA',
+        'Nome IA',
+        'Condição',
+        'Objetivo',
+        'Prob (0-5)'
     ]
 
     # Formatar colunas booleanas
@@ -750,6 +778,96 @@ def render_leads_table(df, tenant_name, date_start, date_end):
 
     # Exibir tabela
     st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+    # === MODAL DE ANÁLISE IA DETALHADA === [FASE 5.6 - NOVO]
+    st.divider()
+    st.caption("💡 **Ver Análise IA Detalhada:** Selecione um lead abaixo para visualizar análise e sugestão de disparo")
+
+    # Filtrar leads com análise IA disponível
+    leads_with_ai = leads_df[
+        (leads_df['analise_ia'].notna()) &
+        (leads_df['analise_ia'] != '') &
+        (leads_df['analise_ia'].str.len() > 10)
+    ].copy()
+
+    if not leads_with_ai.empty:
+        # Criar lista de opções para o selectbox
+        lead_options = ["Selecione um lead..."] + [
+            f"{row['contact_name']} ({row['contact_phone']}) - {row['conversation_date']}"
+            for _, row in leads_with_ai.iterrows()
+        ]
+
+        selected_lead_idx = st.selectbox(
+            "🔍 Selecionar Lead para Ver Análise",
+            range(len(lead_options)),
+            format_func=lambda x: lead_options[x],
+            key="selected_lead_modal"
+        )
+
+        # Se selecionou um lead (não o placeholder)
+        if selected_lead_idx > 0:
+            # Pegar dados do lead selecionado (índice -1 porque o primeiro é placeholder)
+            lead_data = leads_with_ai.iloc[selected_lead_idx - 1]
+
+            # Exibir modal com análise detalhada
+            with st.container():
+                st.markdown("---")
+                st.markdown("### 🤖 Análise IA Detalhada")
+
+                # Informações do lead
+                col1, col2, col3 = st.columns(3)
+
+                with col1:
+                    st.markdown(f"**Nome:** {lead_data['contact_name']}")
+                    st.markdown(f"**Nome IA:** {lead_data['nome_mapeado_bot'] if pd.notna(lead_data['nome_mapeado_bot']) and lead_data['nome_mapeado_bot'] != '' else 'N/A'}")
+
+                with col2:
+                    st.markdown(f"**Telefone:** {lead_data['contact_phone']}")
+                    st.markdown(f"**Data:** {lead_data['conversation_date']}")
+
+                with col3:
+                    prob_0_5 = lead_data['probabilidade_conversao'] if pd.notna(lead_data['probabilidade_conversao']) else 0
+                    score = lead_data['ai_probability_score'] if pd.notna(lead_data['ai_probability_score']) else 0
+                    label = lead_data['ai_probability_label'] if pd.notna(lead_data['ai_probability_label']) else 'N/A'
+                    st.markdown(f"**Probabilidade:** {prob_0_5}/5 ({score:.0f}%)")
+                    st.markdown(f"**Classificação:** {label}")
+
+                # Detalhes OpenAI
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    condicao = lead_data['condicao_fisica'] if pd.notna(lead_data['condicao_fisica']) and lead_data['condicao_fisica'] != 'Não mencionado' else 'N/A'
+                    st.markdown(f"**Condição Física:** {condicao}")
+
+                with col2:
+                    objetivo = lead_data['objetivo'] if pd.notna(lead_data['objetivo']) and lead_data['objetivo'] != 'Não mencionado' else 'N/A'
+                    st.markdown(f"**Objetivo:** {objetivo}")
+
+                st.markdown("---")
+
+                # Análise IA (em expander para economizar espaço)
+                with st.expander("📄 **Análise IA Completa**", expanded=True):
+                    analise = lead_data['analise_ia']
+                    if pd.notna(analise) and analise != '':
+                        st.markdown(analise)
+                    else:
+                        st.info("Análise não disponível")
+
+                # Sugestão de disparo (destacado)
+                st.markdown("#### 📨 Sugestão de Disparo")
+                sugestao = lead_data['sugestao_disparo']
+                if pd.notna(sugestao) and sugestao != '':
+                    st.success(sugestao)
+
+                    # Botão para copiar sugestão
+                    if st.button("📋 Copiar Sugestão", key="copy_suggestion"):
+                        st.toast("✅ Sugestão copiada! (use Ctrl+C para copiar o texto acima)", icon="✅")
+                else:
+                    st.info("Sugestão não disponível")
+
+                st.markdown("---")
+    else:
+        st.info("ℹ️ Nenhum lead com análise IA disponível ainda. Execute o ETL OpenAI para gerar análises.")
 
 
 # ============================================================================
@@ -865,14 +983,46 @@ def show_client_dashboard(session, tenant_id=None):
                     selected_inbox_id = inbox['id']
                     break
 
+    # === FILTROS OPENAI === [FASE 5.6 - NOVO]
+    st.markdown("#### 🤖 Filtros OpenAI")
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        filter_openai = st.checkbox("Apenas com Análise IA", value=False, key="filter_openai")
+
+    with col2:
+        filter_high_prob = st.checkbox("Probabilidade Alta (4-5)", value=False, key="filter_high_prob")
+
+    with col3:
+        filter_visit = st.checkbox("Visita Agendada", value=False, key="filter_visit")
+
+    with col4:
+        filter_classification = st.selectbox(
+            "Classificação",
+            ["Todas", "Alto", "Médio", "Baixo"],
+            key="filter_classification"
+        )
+
     # Botão atualizar
     if st.button("🔄 Atualizar Dados"):
         st.cache_data.clear()
         st.rerun()
 
     # Indicador visual de filtro ativo
+    active_filters = []
     if selected_inbox_id is not None:
-        st.info(f"📥 Exibindo dados apenas da inbox: **{selected_inbox_name}**")
+        active_filters.append(f"Inbox: {selected_inbox_name}")
+    if filter_openai:
+        active_filters.append("Com Análise IA")
+    if filter_high_prob:
+        active_filters.append("Prob 4-5")
+    if filter_visit:
+        active_filters.append("Visita Agendada")
+    if filter_classification != "Todas":
+        active_filters.append(f"Classificação: {filter_classification}")
+
+    if active_filters:
+        st.info(f"🔍 **Filtros ativos:** {' | '.join(active_filters)}")
 
     st.divider()
 
@@ -892,6 +1042,40 @@ def show_client_dashboard(session, tenant_id=None):
             - Aguardar a Fase 3 (ETL Multi-Tenant) para popular os dados
             - Verificar se os inboxes estão mapeados corretamente
         """)
+        st.stop()
+
+    # === APLICAR FILTROS OPENAI === [FASE 5.6]
+    df_filtered = df.copy()
+
+    if filter_openai:
+        # Filtrar apenas conversas com análise IA
+        df_filtered = df_filtered[
+            (df_filtered['analise_ia'].notna()) &
+            (df_filtered['analise_ia'] != '') &
+            (df_filtered['analise_ia'].str.len() > 10)
+        ]
+
+    if filter_high_prob:
+        # Filtrar apenas leads com probabilidade 4 ou 5
+        df_filtered = df_filtered[
+            (df_filtered['probabilidade_conversao'].notna()) &
+            (df_filtered['probabilidade_conversao'] >= 4)
+        ]
+
+    if filter_visit:
+        # Filtrar apenas leads com visita agendada
+        df_filtered = df_filtered[df_filtered['visit_scheduled'] == True]
+
+    if filter_classification != "Todas":
+        # Filtrar por classificação IA
+        df_filtered = df_filtered[df_filtered['ai_probability_label'] == filter_classification]
+
+    # Usar dataframe filtrado para o restante do dashboard
+    df = df_filtered
+
+    if df.empty:
+        st.warning("⚠️ Nenhum dado encontrado com os filtros aplicados")
+        st.info("💡 **Dica:** Tente remover alguns filtros para ver mais resultados")
         st.stop()
 
     # === MÉTRICAS ===
