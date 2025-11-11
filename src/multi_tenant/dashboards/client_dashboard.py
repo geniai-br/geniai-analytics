@@ -570,66 +570,9 @@ def render_score_distribution_chart(score_dist):
             st.write(f"- **{row['Classificação']}**: {row['Quantidade']} leads")
 
 
-def render_quality_metrics(metrics, df):
-    """
-    Renderiza métricas de qualidade (IA%, Resolução%, Tempo Resposta)
-    [FASE 5.5 - NOVA FUNÇÃO]
-
-    Args:
-        metrics: Dict com métricas calculadas
-        df: DataFrame com conversas
-    """
-    st.divider()
-    st.subheader("⚙️ Métricas de Qualidade")
-
-    col1, col2, col3, col4 = st.columns(4)
-
-    total = len(df) if not df.empty else 1
-
-    with col1:
-        pct_ai = (metrics['ai_conversations'] / total * 100) if total > 0 else 0
-        st.metric(
-            "Conversas IA %",
-            f"{pct_ai:.1f}%",
-            help="Percentual de conversas 100% automáticas (sem intervenção humana)"
-        )
-
-    with col2:
-        st.metric(
-            "Taxa Resolução",
-            f"{metrics['resolution_rate']:.1f}%",
-            help="Percentual de conversas resolvidas"
-        )
-
-    with col3:
-        # Converter minutos para horas se > 60
-        avg_time = metrics['avg_response_time']
-        if avg_time >= 60:
-            time_display = f"{avg_time/60:.1f}h"
-        else:
-            time_display = f"{avg_time:.0f}min"
-
-        st.metric(
-            "Tempo Resposta",
-            time_display,
-            help="Tempo médio da primeira resposta"
-        )
-
-    with col4:
-        # Engagement = taxa de retorno (contatos únicos vs total de conversas)
-        # Quanto menor que 100%, mais contatos retornam (mais engagement)
-        # 100% = cada contato teve apenas 1 conversa
-        # <100% = contatos retornam (bom engagement)
-        pct_engagement = (metrics['unique_contacts'] / total * 100) if total > 0 else 0
-
-        # Calcular taxa de retorno (inverso do engagement)
-        return_rate = 100 - pct_engagement
-
-        st.metric(
-            "Taxa Retorno",
-            f"{return_rate:.1f}%",
-            help="Percentual de conversas de contatos que retornaram (quanto maior, melhor o engagement)"
-        )
+# REMOVIDO: render_quality_metrics() - Arquivada em _archived/quality_metrics_removed.py
+# Data: 2025-11-11
+# Motivo: Simplificação do dashboard (métricas de qualidade não essenciais)
 
 
 def render_period_distribution_chart(period_dist):
@@ -657,6 +600,249 @@ def render_period_distribution_chart(period_dist):
         if idx < 4:
             with cols[idx]:
                 st.metric(row['Período'], f"{row['Quantidade']}")
+
+
+# ============================================================================
+# ANÁLISE POR INBOX [FASE 5]
+# ============================================================================
+
+def prepare_inbox_metrics(df):
+    """
+    Prepara métricas agregadas e individuais por inbox
+
+    Args:
+        df: DataFrame com conversas
+
+    Returns:
+        tuple: (metrics_agregadas, metrics_por_inbox)
+    """
+    if df.empty:
+        return {}, pd.DataFrame()
+
+    # Métricas agregadas (todas as inboxes juntas)
+    total_conversas = len(df)
+    total_leads = len(df[df['is_lead'] == True])
+    total_visitas = len(df[df['visit_scheduled'] == True])
+    total_crm = len(df[df['crm_converted'] == True])
+
+    # Tempo médio de primeira resposta (em minutos)
+    avg_response_time = df['first_response_time_minutes'].mean() if 'first_response_time_minutes' in df.columns else 0
+
+    metrics_agregadas = {
+        'total_conversas': total_conversas,
+        'total_leads': total_leads,
+        'total_visitas': total_visitas,
+        'total_crm': total_crm,
+        'taxa_conversao_leads': (total_leads / total_conversas * 100) if total_conversas > 0 else 0,
+        'taxa_conversao_crm': (total_crm / total_leads * 100) if total_leads > 0 else 0,
+        'avg_response_time': avg_response_time
+    }
+
+    # Métricas por inbox individual
+    inbox_groups = df.groupby('inbox_name').agg({
+        'conversation_id': 'count',  # Total de conversas
+        'is_lead': lambda x: (x == True).sum(),  # Total de leads
+        'visit_scheduled': lambda x: (x == True).sum(),  # Total de visitas
+        'crm_converted': lambda x: (x == True).sum(),  # Total CRM
+        'first_response_time_minutes': 'mean'  # Tempo médio de resposta
+    }).reset_index()
+
+    inbox_groups.columns = ['inbox_name', 'total_conversas', 'total_leads', 'total_visitas', 'total_crm', 'avg_response_time']
+
+    # Calcular taxas de conversão
+    inbox_groups['taxa_leads'] = inbox_groups.apply(
+        lambda row: (row['total_leads'] / row['total_conversas'] * 100) if row['total_conversas'] > 0 else 0,
+        axis=1
+    )
+    inbox_groups['taxa_crm'] = inbox_groups.apply(
+        lambda row: (row['total_crm'] / row['total_leads'] * 100) if row['total_leads'] > 0 else 0,
+        axis=1
+    )
+
+    # Ordenar por total de conversas (decrescente)
+    inbox_groups = inbox_groups.sort_values('total_conversas', ascending=False)
+
+    return metrics_agregadas, inbox_groups
+
+
+def render_inbox_analysis(df):
+    """
+    Renderiza seção de Análise por Inbox (FASE 5)
+
+    Exibe métricas de DUAS formas:
+    1. Agregadas: Todas as inboxes juntas (visão geral)
+    2. Separadas: Métricas individuais por inbox (visão detalhada)
+
+    Args:
+        df: DataFrame com conversas
+    """
+    st.subheader("📬 Análise por Inbox")
+
+    if df.empty:
+        st.info("ℹ️ Nenhum dado disponível para análise por inbox")
+        return
+
+    # Preparar dados
+    metrics_agregadas, inbox_metrics = prepare_inbox_metrics(df)
+
+    # Toggle entre visão agregada e separada
+    view_mode = st.radio(
+        "Modo de Visualização:",
+        options=["📊 Visão Agregada (Consolidado)", "📋 Visão Separada (Por Inbox)"],
+        horizontal=True,
+        key="inbox_view_mode"
+    )
+
+    st.divider()
+
+    if view_mode == "📊 Visão Agregada (Consolidado)":
+        # === VISÃO AGREGADA ===
+        st.markdown("#### 📊 Métricas Consolidadas (Todas as Inboxes)")
+
+        # Métricas principais em 5 colunas
+        col1, col2, col3, col4, col5 = st.columns(5)
+
+        with col1:
+            st.metric(
+                "Total Conversas",
+                format_number(metrics_agregadas['total_conversas']),
+                help="Total de conversas em todas as inboxes"
+            )
+
+        with col2:
+            st.metric(
+                "Total Leads",
+                format_number(metrics_agregadas['total_leads']),
+                delta=f"{metrics_agregadas['taxa_conversao_leads']:.1f}% conversão",
+                help="Leads identificados em todas as inboxes"
+            )
+
+        with col3:
+            st.metric(
+                "Visitas Agendadas",
+                format_number(metrics_agregadas['total_visitas']),
+                help="Total de visitas agendadas"
+            )
+
+        with col4:
+            st.metric(
+                "Conversões CRM",
+                format_number(metrics_agregadas['total_crm']),
+                delta=f"{metrics_agregadas['taxa_conversao_crm']:.1f}% dos leads",
+                help="Leads convertidos em CRM"
+            )
+
+        with col5:
+            # Formatar tempo de resposta
+            avg_time = metrics_agregadas['avg_response_time']
+            if pd.notna(avg_time) and avg_time > 0:
+                if avg_time < 60:
+                    time_str = f"{avg_time:.0f}min"
+                else:
+                    hours = avg_time / 60
+                    time_str = f"{hours:.1f}h"
+            else:
+                time_str = "N/A"
+
+            st.metric(
+                "Tempo Médio Resposta",
+                time_str,
+                help="Tempo médio de primeira resposta"
+            )
+
+        st.divider()
+
+        # Gráfico de distribuição por inbox
+        st.markdown("#### 📊 Distribuição de Conversas por Inbox")
+
+        if not inbox_metrics.empty:
+            # Gráfico de barras horizontal
+            import plotly.express as px
+
+            fig = px.bar(
+                inbox_metrics,
+                x='total_conversas',
+                y='inbox_name',
+                orientation='h',
+                title='Total de Conversas por Inbox',
+                labels={'total_conversas': 'Conversas', 'inbox_name': 'Inbox'},
+                color='total_conversas',
+                color_continuous_scale='Blues'
+            )
+            fig.update_layout(showlegend=False, height=300)
+            st.plotly_chart(fig, use_container_width=True)
+
+    else:
+        # === VISÃO SEPARADA (POR INBOX) ===
+        st.markdown("#### 📋 Métricas Individuais por Inbox")
+
+        if inbox_metrics.empty:
+            st.info("ℹ️ Nenhuma inbox encontrada")
+            return
+
+        # Exibir tabela com métricas por inbox
+        display_inbox = inbox_metrics[[
+            'inbox_name',
+            'total_conversas',
+            'total_leads',
+            'taxa_leads',
+            'total_visitas',
+            'total_crm',
+            'taxa_crm',
+            'avg_response_time'
+        ]].copy()
+
+        # Renomear colunas
+        display_inbox.columns = [
+            'Inbox',
+            'Conversas',
+            'Leads',
+            'Taxa Leads (%)',
+            'Visitas',
+            'CRM',
+            'Taxa CRM (%)',
+            'Tempo Resp. (min)'
+        ]
+
+        # Formatar colunas
+        display_inbox['Taxa Leads (%)'] = display_inbox['Taxa Leads (%)'].apply(lambda x: f"{x:.1f}%")
+        display_inbox['Taxa CRM (%)'] = display_inbox['Taxa CRM (%)'].apply(lambda x: f"{x:.1f}%")
+        display_inbox['Tempo Resp. (min)'] = display_inbox['Tempo Resp. (min)'].apply(
+            lambda x: f"{x:.0f}" if pd.notna(x) and x > 0 else "N/A"
+        )
+
+        # Exibir tabela
+        st.dataframe(display_inbox, use_container_width=True, hide_index=True)
+
+        st.divider()
+
+        # Cards individuais por inbox (top 3)
+        st.markdown("#### 🏆 Top 3 Inboxes (por volume)")
+
+        top3 = inbox_metrics.head(3)
+
+        if len(top3) > 0:
+            cols = st.columns(min(len(top3), 3))
+
+            for idx, (_, row) in enumerate(top3.iterrows()):
+                if idx < 3:
+                    with cols[idx]:
+                        st.markdown(f"**{row['inbox_name']}**")
+                        st.metric("Conversas", format_number(int(row['total_conversas'])))
+                        st.metric("Leads", format_number(int(row['total_leads'])), delta=f"{row['taxa_leads']:.1f}%")
+
+                        # Tempo de resposta
+                        avg_time = row['avg_response_time']
+                        if pd.notna(avg_time) and avg_time > 0:
+                            if avg_time < 60:
+                                time_str = f"{avg_time:.0f}min"
+                            else:
+                                hours = avg_time / 60
+                                time_str = f"{hours:.1f}h"
+                        else:
+                            time_str = "N/A"
+
+                        st.caption(f"⏱️ Tempo Resp: {time_str}")
 
 
 def render_leads_table(df, df_original, tenant_name, date_start, date_end):
@@ -1074,8 +1260,8 @@ def show_client_dashboard(session, tenant_id=None):
 
     st.divider()
 
-    # === MÉTRICAS DE QUALIDADE === [FASE 5.5 - NOVO]
-    render_quality_metrics(metrics, df)
+    # === ANÁLISE POR INBOX === [FASE 5 - NOVO]
+    render_inbox_analysis(df)
 
     st.divider()
 
