@@ -659,12 +659,13 @@ def render_period_distribution_chart(period_dist):
                 st.metric(row['Período'], f"{row['Quantidade']}")
 
 
-def render_leads_table(df, tenant_name, date_start, date_end):
+def render_leads_table(df, df_original, tenant_name, date_start, date_end):
     """
     Renderiza tabela de leads genérica (multi-tenant)
 
     Args:
-        df: DataFrame com conversas
+        df: DataFrame com conversas (JÁ FILTRADO pelos filtros rápidos)
+        df_original: DataFrame original SEM filtros (para extrair inboxes disponíveis)
         tenant_name: Nome do tenant (para nome do arquivo)
         date_start: Data início (para nome do arquivo)
         date_end: Data fim (para nome do arquivo)
@@ -691,6 +692,139 @@ def render_leads_table(df, tenant_name, date_start, date_end):
             )
         else:
             st.button("📥 Exportar CSV", disabled=True, use_container_width=True, help="Nenhum lead para exportar")
+
+    st.divider()
+
+    # === FILTROS RÁPIDOS === [FASE 4]
+    st.markdown("#### 🔍 Filtros Rápidos")
+
+    # 6 colunas horizontais
+    col_f1, col_f2, col_f3, col_f4, col_f5, col_f6 = st.columns(6)
+
+    with col_f1:
+        filter_nome_input = st.text_input(
+            "👤 Nome",
+            value=st.session_state.filter_nome,
+            placeholder="Digite...",
+            key="input_filter_nome",
+            help="Busca parcial no nome do contato"
+        )
+        # Atualizar session state
+        if filter_nome_input != st.session_state.filter_nome:
+            st.session_state.filter_nome = filter_nome_input
+            st.rerun()
+
+    with col_f2:
+        filter_telefone_input = st.text_input(
+            "📞 Telefone",
+            value=st.session_state.filter_telefone,
+            placeholder="Digite...",
+            key="input_filter_telefone",
+            help="Busca parcial no telefone"
+        )
+        # Atualizar session state
+        if filter_telefone_input != st.session_state.filter_telefone:
+            st.session_state.filter_telefone = filter_telefone_input
+            st.rerun()
+
+    with col_f3:
+        # IMPORTANTE: Usar inboxes REAIS dos dados (não do mapeamento inbox_tenant_mapping)
+        # Motivo: Mapeamento pode estar desatualizado, causando filtros que não retornam dados
+        inbox_names_available = sorted(df_original['inbox_name'].dropna().unique().tolist()) if not df_original.empty else []
+
+        # Limpar filtros inválidos do session_state (inboxes que não existem mais nos dados)
+        valid_selected = [inbox for inbox in st.session_state.filter_inboxes if inbox in inbox_names_available]
+        if valid_selected != st.session_state.filter_inboxes:
+            st.session_state.filter_inboxes = valid_selected
+
+        filter_inboxes_input = st.multiselect(
+            "📬 Inboxes",
+            options=inbox_names_available,
+            default=st.session_state.filter_inboxes,
+            key="input_filter_inboxes",
+            help="Selecione uma ou mais inboxes (baseado nos dados reais)"
+        )
+        # Atualizar session state
+        if filter_inboxes_input != st.session_state.filter_inboxes:
+            st.session_state.filter_inboxes = filter_inboxes_input
+            st.rerun()
+
+    with col_f4:
+        filter_status_input = st.multiselect(
+            "📊 Status",
+            options=["Aberta", "Resolvida", "Pendente"],
+            default=st.session_state.filter_status_list,
+            key="input_filter_status",
+            help="Status da conversa"
+        )
+        # Atualizar session state
+        if filter_status_input != st.session_state.filter_status_list:
+            st.session_state.filter_status_list = filter_status_input
+            st.rerun()
+
+    with col_f5:
+        filter_classificacao_input = st.multiselect(
+            "🎯 Classificação",
+            options=["Alto", "Médio", "Baixo"],
+            default=st.session_state.filter_classificacao,
+            key="input_filter_classificacao",
+            help="Classificação IA do lead"
+        )
+        # Atualizar session state
+        if filter_classificacao_input != st.session_state.filter_classificacao:
+            st.session_state.filter_classificacao = filter_classificacao_input
+            st.rerun()
+
+    with col_f6:
+        filter_score_input = st.slider(
+            "📈 Score IA Mín.",
+            min_value=0.0,
+            max_value=100.0,
+            value=st.session_state.filter_score_min,
+            step=5.0,
+            key="input_filter_score",
+            help="Score mínimo IA (0-100%)"
+        )
+        # Atualizar session state
+        if filter_score_input != st.session_state.filter_score_min:
+            st.session_state.filter_score_min = filter_score_input
+            st.rerun()
+
+    # Linha de controle: Limpar filtros + Indicador
+    col_control1, col_control2 = st.columns([1, 4])
+
+    with col_control1:
+        if st.button("🗑️ Limpar Filtros", use_container_width=True):
+            st.session_state.filter_nome = ""
+            st.session_state.filter_telefone = ""
+            st.session_state.filter_inboxes = []
+            st.session_state.filter_status_list = []
+            st.session_state.filter_classificacao = []
+            st.session_state.filter_score_min = 0.0
+            st.rerun()
+
+    with col_control2:
+        # Contar filtros ativos
+        active_filters = 0
+        if st.session_state.filter_nome:
+            active_filters += 1
+        if st.session_state.filter_telefone:
+            active_filters += 1
+        if st.session_state.filter_inboxes:
+            active_filters += 1
+        if st.session_state.filter_status_list:
+            active_filters += 1
+        if st.session_state.filter_classificacao:
+            active_filters += 1
+        if st.session_state.filter_score_min > 0:
+            active_filters += 1
+
+        if active_filters > 0:
+            st.caption(f"✅ {active_filters} filtro(s) ativo(s)")
+        else:
+            st.caption("ℹ️ Nenhum filtro aplicado")
+
+    st.divider()
 
     # Filtrar apenas leads
     leads_df = df[df['is_lead'] == True].copy()
@@ -808,6 +942,20 @@ def show_client_dashboard(session, tenant_id=None):
 
     st.divider()
 
+    # === INICIALIZAR SESSION STATE DOS FILTROS RÁPIDOS === [FASE 4]
+    if 'filter_nome' not in st.session_state:
+        st.session_state.filter_nome = ""
+    if 'filter_telefone' not in st.session_state:
+        st.session_state.filter_telefone = ""
+    if 'filter_inboxes' not in st.session_state:
+        st.session_state.filter_inboxes = []
+    if 'filter_status_list' not in st.session_state:
+        st.session_state.filter_status_list = []
+    if 'filter_classificacao' not in st.session_state:
+        st.session_state.filter_classificacao = []
+    if 'filter_score_min' not in st.session_state:
+        st.session_state.filter_score_min = 0.0
+
     # === FILTROS DE DATA E INBOX ===
     col1, col2, col3, col4 = st.columns([2, 1, 1, 2])
 
@@ -860,26 +1008,11 @@ def show_client_dashboard(session, tenant_id=None):
     # REMOVIDO: Filtros OpenAI específicos AllpFit (analise_ia, probabilidade_conversao, condicao_fisica, objetivo)
     # Ver: src/multi_tenant/dashboards/_archived/allpfit_specific_functions.py
 
-    # Botão atualizar
-    if st.button("🔄 Atualizar Dados"):
-        st.cache_data.clear()
-        st.rerun()
-
-    # Indicador visual de filtro ativo
-    active_filters = []
-    if selected_inbox_id is not None:
-        active_filters.append(f"Inbox: {selected_inbox_name}")
-
-    if active_filters:
-        st.info(f"🔍 **Filtros ativos:** {' | '.join(active_filters)}")
-
-    st.divider()
-
     # === CARREGAR DADOS ===
     with st.spinner("🔄 Carregando dados..."):
-        df = load_conversations(display_tenant_id, date_start, date_end, inbox_filter=selected_inbox_id)
+        df_original = load_conversations(display_tenant_id, date_start, date_end, inbox_filter=selected_inbox_id)
 
-    if df.empty:
+    if df_original.empty:
         st.warning("⚠️ Nenhum dado encontrado para o período selecionado")
         st.info("""
             **Possíveis motivos:**
@@ -896,9 +1029,44 @@ def show_client_dashboard(session, tenant_id=None):
     # REMOVIDO: Aplicação de filtros OpenAI específicos AllpFit
     # Ver: src/multi_tenant/dashboards/_archived/allpfit_specific_functions.py
 
-    if df.empty:
-        st.warning("⚠️ Nenhum dado encontrado para o período selecionado")
-        st.stop()
+    # === APLICAR FILTROS RÁPIDOS === [FASE 4 - NOVO]
+    df_filtered = df_original.copy()
+
+    # Filtro por Nome (busca parcial, case-insensitive)
+    if st.session_state.filter_nome:
+        df_filtered = df_filtered[
+            df_filtered['contact_name'].str.contains(st.session_state.filter_nome, case=False, na=False)
+        ]
+
+    # Filtro por Telefone (busca parcial)
+    if st.session_state.filter_telefone:
+        df_filtered = df_filtered[
+            df_filtered['contact_phone'].str.contains(st.session_state.filter_telefone, na=False)
+        ]
+
+    # Filtro por Inboxes (multi-select)
+    if st.session_state.filter_inboxes:
+        df_filtered = df_filtered[df_filtered['inbox_name'].isin(st.session_state.filter_inboxes)]
+
+    # Filtro por Status (multi-select)
+    if st.session_state.filter_status_list:
+        status_map_filter = {"Aberta": 0, "Resolvida": 1, "Pendente": 2}
+        status_values = [status_map_filter[s] for s in st.session_state.filter_status_list if s in status_map_filter]
+        df_filtered = df_filtered[df_filtered['conversation_status'].isin(status_values)]
+
+    # Filtro por Classificação IA (multi-select)
+    if st.session_state.filter_classificacao:
+        df_filtered = df_filtered[df_filtered['ai_probability_label'].isin(st.session_state.filter_classificacao)]
+
+    # Filtro por Score IA mínimo (slider)
+    if st.session_state.filter_score_min > 0:
+        df_filtered = df_filtered[
+            (df_filtered['ai_probability_score'].notna()) &
+            (df_filtered['ai_probability_score'] >= st.session_state.filter_score_min)
+        ]
+
+    # Usar DataFrame filtrado para o restante do dashboard
+    df = df_filtered
 
     # === MÉTRICAS ===
     metrics = calculate_metrics(df)
@@ -940,7 +1108,7 @@ def show_client_dashboard(session, tenant_id=None):
     st.divider()
 
     # === TABELA DE LEADS ===
-    render_leads_table(df, tenant_name, date_start, date_end)
+    render_leads_table(df, df_original, tenant_name, date_start, date_end)
 
     st.divider()
 
