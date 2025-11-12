@@ -603,6 +603,185 @@ def render_period_distribution_chart(period_dist):
 
 
 # ============================================================================
+# CONVERSA COMPILADA [FASE 6]
+# ============================================================================
+
+def format_message_preview(message_compiled, max_messages=3):
+    """
+    Formata prévia da conversa compilada (primeiras N mensagens)
+
+    Args:
+        message_compiled: JSONB com mensagens (lista de dicts ou None)
+        max_messages: Número máximo de mensagens a exibir na prévia
+
+    Returns:
+        str: Texto formatado para exibição na tabela
+    """
+    import json
+
+    # CORREÇÃO: Verificar tipo ANTES de usar pd.isna() para evitar erro com arrays
+    # JSONB do PostgreSQL vem como lista/dict Python (não string!)
+
+    # Caso 1: JSONB já parseado (lista ou dict)
+    if isinstance(message_compiled, (list, dict)):
+        messages = message_compiled
+
+        # Verificar se lista está vazia
+        if isinstance(messages, list) and len(messages) == 0:
+            return "N/A"
+
+    # Caso 2: None ou NaN (somente DEPOIS de verificar se não é lista/dict)
+    elif message_compiled is None or pd.isna(message_compiled):
+        return "N/A"
+
+    # Caso 3: String JSON (fallback para compatibilidade)
+    elif isinstance(message_compiled, str):
+        try:
+            messages = json.loads(message_compiled)
+            if isinstance(messages, list) and len(messages) == 0:
+                return "N/A"
+        except Exception as e:
+            return f"Erro: {str(e)}"
+
+    # Caso 4: Tipo desconhecido
+    else:
+        return "N/A"
+
+    try:
+
+        # Pegar primeiras N mensagens
+        preview_messages = messages[:max_messages]
+
+        # Formatar cada mensagem
+        formatted = []
+        for msg in preview_messages:
+            sender = msg.get('sender', '?')
+            text = msg.get('text', '')
+
+            # Emoji por tipo de sender
+            if sender == 'Contact':
+                emoji = '👤'
+            elif sender == 'AgentBot':
+                emoji = '🤖'
+            elif sender == 'User':
+                emoji = '👨‍💼'
+            else:
+                emoji = '📩'
+
+            # Limitar texto a 50 caracteres
+            if len(text) > 50:
+                text = text[:47] + "..."
+
+            formatted.append(f"{emoji} {text}")
+
+        # Juntar com quebra de linha
+        result = "\n".join(formatted)
+
+        # Indicar se há mais mensagens
+        if len(messages) > max_messages:
+            result += f"\n... (+{len(messages) - max_messages} mensagens)"
+
+        return result
+
+    except Exception as e:
+        return f"Erro: {str(e)}"
+
+
+def render_conversation_modal(conversation_id, message_compiled, contact_name):
+    """
+    Renderiza modal expandido com conversa completa
+
+    Args:
+        conversation_id: ID da conversa
+        message_compiled: JSONB com todas as mensagens
+        contact_name: Nome do contato
+    """
+    import json
+
+    with st.expander(f"💬 Conversa Completa - {contact_name} (ID: {conversation_id})"):
+        # CORREÇÃO: Mesma lógica de format_message_preview()
+        # Verificar tipo ANTES de usar pd.isna()
+
+        # Caso 1: JSONB já parseado (lista ou dict)
+        if isinstance(message_compiled, (list, dict)):
+            messages = message_compiled
+
+            # Verificar se lista está vazia
+            if isinstance(messages, list) and len(messages) == 0:
+                st.info("ℹ️ Nenhuma mensagem encontrada")
+                return
+
+        # Caso 2: None ou NaN
+        elif message_compiled is None or pd.isna(message_compiled):
+            st.warning("⚠️ Conversa não disponível")
+            return
+
+        # Caso 3: String JSON (fallback)
+        elif isinstance(message_compiled, str):
+            try:
+                messages = json.loads(message_compiled)
+                if isinstance(messages, list) and len(messages) == 0:
+                    st.info("ℹ️ Nenhuma mensagem encontrada")
+                    return
+            except Exception as e:
+                st.error(f"❌ Erro ao fazer parse do JSON: {str(e)}")
+                return
+
+        # Caso 4: Tipo desconhecido
+        else:
+            st.warning("⚠️ Formato de conversa não reconhecido")
+            return
+
+        try:
+
+            st.caption(f"📊 Total de mensagens: {len(messages)}")
+            st.divider()
+
+            # Exibir cada mensagem
+            for idx, msg in enumerate(messages, 1):
+                sender = msg.get('sender', 'Desconhecido')
+                text = msg.get('text', '')
+                sent_at = msg.get('sent_at', '')
+
+                # Emoji e cor por tipo de sender
+                if sender == 'Contact':
+                    emoji = '👤'
+                    label = 'Contato'
+                    color = '#4CAF50'  # Verde
+                elif sender == 'AgentBot':
+                    emoji = '🤖'
+                    label = 'Bot'
+                    color = '#2196F3'  # Azul
+                elif sender == 'User':
+                    emoji = '👨‍💼'
+                    label = 'Atendente'
+                    color = '#FF9800'  # Laranja
+                else:
+                    emoji = '📩'
+                    label = sender
+                    color = '#9E9E9E'  # Cinza
+
+                # Formatar timestamp
+                try:
+                    from datetime import datetime
+                    dt = datetime.fromisoformat(sent_at.replace('Z', '+00:00'))
+                    time_str = dt.strftime('%d/%m/%Y %H:%M')
+                except:
+                    time_str = sent_at
+
+                # Exibir mensagem
+                st.markdown(f"""
+                <div style="margin-bottom: 10px; padding: 10px; border-left: 3px solid {color}; background-color: rgba(0,0,0,0.05);">
+                    <strong>{emoji} {label}</strong> <small style="color: #888;">({time_str})</small><br>
+                    {text}
+                </div>
+                """, unsafe_allow_html=True)
+
+        except Exception as e:
+            st.error(f"❌ Erro ao carregar conversa: {str(e)}")
+
+
+# ============================================================================
 # ANÁLISE POR INBOX [FASE 5]
 # ============================================================================
 
@@ -1019,7 +1198,7 @@ def render_leads_table(df, df_original, tenant_name, date_start, date_end):
         st.info("ℹ️ Nenhum lead encontrado no período selecionado")
         return
 
-    # Selecionar colunas genéricas multi-tenant
+    # Selecionar colunas genéricas multi-tenant (incluindo conversa_compilada) [FASE 6]
     display_df = leads_df[[
         'conversation_display_id',
         'contact_name',
@@ -1031,11 +1210,30 @@ def render_leads_table(df, df_original, tenant_name, date_start, date_end):
         'crm_converted',
         'ai_probability_label',
         'ai_probability_score',
-        'nome_mapeado_bot'
+        'nome_mapeado_bot',
+        'conversa_compilada'  # [FASE 6 - NOVO]
     ]].copy()
 
+    # Adicionar coluna de prévia da conversa [FASE 6]
+    display_df['preview_conversa'] = display_df['conversa_compilada'].apply(lambda x: format_message_preview(x, max_messages=3))
+
     # Renomear colunas
-    display_df.columns = [
+    display_df_view = display_df[[
+        'conversation_display_id',
+        'contact_name',
+        'contact_phone',
+        'inbox_name',
+        'conversation_date',
+        'is_lead',
+        'visit_scheduled',
+        'crm_converted',
+        'ai_probability_label',
+        'ai_probability_score',
+        'nome_mapeado_bot',
+        'preview_conversa'
+    ]].copy()
+
+    display_df_view.columns = [
         'ID',
         'Nome',
         'Telefone',
@@ -1046,19 +1244,42 @@ def render_leads_table(df, df_original, tenant_name, date_start, date_end):
         'CRM',
         'Classificação IA',
         'Score IA',
-        'Nome Mapeado'
+        'Nome Mapeado',
+        'Prévia Conversa'  # [FASE 6 - NOVO]
     ]
 
     # Formatar colunas booleanas
-    display_df['Lead'] = display_df['Lead'].apply(lambda x: '✅' if x else '❌')
-    display_df['Visita'] = display_df['Visita'].apply(lambda x: '✅' if x else '❌')
-    display_df['CRM'] = display_df['CRM'].apply(lambda x: '✅' if x else '❌')
+    display_df_view['Lead'] = display_df_view['Lead'].apply(lambda x: '✅' if x else '❌')
+    display_df_view['Visita'] = display_df_view['Visita'].apply(lambda x: '✅' if x else '❌')
+    display_df_view['CRM'] = display_df_view['CRM'].apply(lambda x: '✅' if x else '❌')
 
     # Formatar score
-    display_df['Score IA'] = display_df['Score IA'].apply(lambda x: f"{x:.1f}%" if pd.notna(x) else "-")
+    display_df_view['Score IA'] = display_df_view['Score IA'].apply(lambda x: f"{x:.1f}%" if pd.notna(x) else "-")
 
     # Exibir tabela
-    st.dataframe(display_df, use_container_width=True, hide_index=True)
+    st.dataframe(display_df_view, use_container_width=True, hide_index=True)
+
+    st.divider()
+
+    # === CONVERSAS COMPLETAS (EXPANDERS) === [FASE 6 - NOVO]
+    st.markdown("#### 💬 Ver Conversas Completas")
+
+    # Limitar a 10 conversas para não sobrecarregar a UI
+    max_conversations_to_show = min(10, len(leads_df))
+
+    if max_conversations_to_show > 0:
+        st.caption(f"📊 Exibindo até {max_conversations_to_show} conversas (primeiros {max_conversations_to_show} leads da tabela)")
+
+        # Iterar sobre os primeiros N leads
+        for idx, row in leads_df.head(max_conversations_to_show).iterrows():
+            conversation_id = row['conversation_display_id']
+            contact_name = row['contact_name'] or "Sem nome"
+            message_compiled = row['conversa_compilada']
+
+            # Renderizar modal/expander para cada conversa
+            render_conversation_modal(conversation_id, message_compiled, contact_name)
+    else:
+        st.info("ℹ️ Nenhuma conversa disponível para exibição")
 
     # REMOVIDO: Modal de Análise IA Detalhada (específico AllpFit)
     # Ver: src/multi_tenant/dashboards/_archived/allpfit_specific_functions.py → render_allpfit_ai_analysis_modal()
