@@ -523,9 +523,174 @@ def render_leads_chart(leads_by_day):
         st.info("ℹ️ Nenhum lead para exibir no período selecionado")
         return
 
-    # Usar Streamlit native chart (simples e rápido)
     st.subheader("📈 Leads por Dia")
-    st.bar_chart(leads_by_day.set_index('Data')['Leads'], use_container_width=True)
+
+    # === FILTRO DE PERÍODO DO GRÁFICO ===
+    periodo_grafico = st.selectbox(
+        "📅 Período:",
+        options=[
+            "Últimos 7 dias",
+            "Últimos 15 dias",
+            "Últimos 30 dias",
+            "Mês atual",
+            "Mês passado",
+            "Últimos 3 meses",
+            "Últimos 6 meses",
+            "Último ano",
+            "Todos os dados"
+        ],
+        index=2,  # Default: Últimos 30 dias
+        key="periodo_grafico_leads"
+    )
+
+    # Filtrar dados baseado no período selecionado
+    from datetime import datetime, timedelta
+
+    hoje = pd.Timestamp(datetime.now().date())
+
+    if periodo_grafico == "Últimos 7 dias":
+        data_corte = hoje - timedelta(days=7)
+        leads_filtrados = leads_by_day[pd.to_datetime(leads_by_day['Data']) >= data_corte].copy()
+    elif periodo_grafico == "Últimos 15 dias":
+        data_corte = hoje - timedelta(days=15)
+        leads_filtrados = leads_by_day[pd.to_datetime(leads_by_day['Data']) >= data_corte].copy()
+    elif periodo_grafico == "Últimos 30 dias":
+        data_corte = hoje - timedelta(days=30)
+        leads_filtrados = leads_by_day[pd.to_datetime(leads_by_day['Data']) >= data_corte].copy()
+    elif periodo_grafico == "Mês atual":
+        inicio_mes = hoje.replace(day=1)
+        leads_filtrados = leads_by_day[pd.to_datetime(leads_by_day['Data']) >= inicio_mes].copy()
+    elif periodo_grafico == "Mês passado":
+        inicio_mes_passado = (hoje.replace(day=1) - timedelta(days=1)).replace(day=1)
+        fim_mes_passado = hoje.replace(day=1) - timedelta(days=1)
+        leads_filtrados = leads_by_day[
+            (pd.to_datetime(leads_by_day['Data']) >= inicio_mes_passado) &
+            (pd.to_datetime(leads_by_day['Data']) <= fim_mes_passado)
+        ].copy()
+    elif periodo_grafico == "Últimos 3 meses":
+        data_corte = hoje - timedelta(days=90)
+        leads_filtrados = leads_by_day[pd.to_datetime(leads_by_day['Data']) >= data_corte].copy()
+    elif periodo_grafico == "Últimos 6 meses":
+        data_corte = hoje - timedelta(days=180)
+        leads_filtrados = leads_by_day[pd.to_datetime(leads_by_day['Data']) >= data_corte].copy()
+    elif periodo_grafico == "Último ano":
+        data_corte = hoje - timedelta(days=365)
+        leads_filtrados = leads_by_day[pd.to_datetime(leads_by_day['Data']) >= data_corte].copy()
+    else:  # Todos os dados
+        leads_filtrados = leads_by_day.copy()
+
+    # Se não houver dados após filtro, mostrar mensagem
+    if leads_filtrados.empty:
+        st.info(f"ℹ️ Nenhum lead encontrado no período: **{periodo_grafico}**")
+        return
+
+    # Converter Data para datetime
+    leads_filtrados['Data'] = pd.to_datetime(leads_filtrados['Data'])
+
+    # LÓGICA SIMPLIFICADA: Granularidade automática baseada no período selecionado
+    # Últimos 7/15/30 dias → Diário
+    # Mês atual/passado → Mensal (1 barra)
+    # Últimos 3/6 meses ou ano → Mensal
+    # Todos os dados → Inteligente (baseado na quantidade de dias)
+
+    if periodo_grafico in ["Últimos 7 dias", "Últimos 15 dias", "Últimos 30 dias"]:
+        # Mostrar cada dia individualmente
+        leads_filtrados['Periodo'] = leads_filtrados['Data'].dt.strftime('%d/%m')
+        chart_data = leads_filtrados
+        x_col = 'Periodo'
+        x_title = 'Data'
+
+    elif periodo_grafico in ["Mês atual", "Mês passado"]:
+        # Agrupar tudo em 1 barra mensal
+        agrupado = leads_filtrados.groupby(leads_filtrados['Data'].dt.to_period('M')).agg({'Leads': 'sum'}).reset_index()
+        agrupado['Data'] = agrupado['Data'].dt.to_timestamp()
+        agrupado['Periodo'] = agrupado['Data'].dt.strftime('%b/%Y')
+
+        chart_data = agrupado
+        x_col = 'Periodo'
+        x_title = 'Mês'
+
+    elif periodo_grafico in ["Últimos 3 meses", "Últimos 6 meses", "Último ano"]:
+        # Agrupar por mês (3, 6 ou 12 barras)
+        agrupado = leads_filtrados.groupby(leads_filtrados['Data'].dt.to_period('M')).agg({'Leads': 'sum'}).reset_index()
+        agrupado['Data'] = agrupado['Data'].dt.to_timestamp()
+        agrupado['Periodo'] = agrupado['Data'].dt.strftime('%b/%Y')
+
+        chart_data = agrupado
+        x_col = 'Periodo'
+        x_title = 'Mês'
+
+    else:  # "Todos os dados"
+        # Agrupamento inteligente baseado na quantidade de dias
+        num_days = len(leads_filtrados)
+
+        if num_days > 90:
+            # Mais de 90 dias: agrupar por mês
+            agrupado = leads_filtrados.groupby(leads_filtrados['Data'].dt.to_period('M')).agg({'Leads': 'sum'}).reset_index()
+            agrupado['Data'] = agrupado['Data'].dt.to_timestamp()
+            agrupado['Periodo'] = agrupado['Data'].dt.strftime('%b/%Y')
+
+            chart_data = agrupado
+            x_col = 'Periodo'
+            x_title = 'Mês'
+
+        elif num_days > 60:
+            # Entre 60 e 90 dias: agrupar por semana
+            agrupado = leads_filtrados.groupby(leads_filtrados['Data'].dt.to_period('W')).agg({'Leads': 'sum'}).reset_index()
+            agrupado['Data'] = agrupado['Data'].dt.to_timestamp()
+            agrupado['Periodo'] = agrupado['Data'].dt.strftime('%d/%m')
+
+            chart_data = agrupado
+            x_col = 'Periodo'
+            x_title = 'Semana'
+
+        else:
+            # Até 60 dias: diário
+            leads_filtrados['Periodo'] = leads_filtrados['Data'].dt.strftime('%d/%m')
+            chart_data = leads_filtrados
+            x_col = 'Periodo'
+            x_title = 'Data'
+
+    # Usar Plotly com configuração simplificada (sem botões confusos)
+    import plotly.express as px
+
+    fig = px.bar(
+        chart_data,
+        x=x_col,
+        y='Leads',
+        title='',
+        labels={x_col: x_title, 'Leads': 'Quantidade de Leads'},
+        text='Leads'
+    )
+
+    # Ajustar layout para barras mais próximas
+    fig.update_traces(
+        textposition='outside',
+        marker_color='#1f77b4',
+        hovertemplate=f'<b>{x_title}:</b> %{{x}}<br><b>Leads:</b> %{{y}}<extra></extra>'
+    )
+
+    # Decidir rotação de labels baseado na quantidade de barras
+    num_bars = len(chart_data)
+    rotate_labels = num_bars > 30
+
+    fig.update_layout(
+        xaxis_title=x_title,
+        yaxis_title='Leads',
+        showlegend=False,
+        height=400,
+        bargap=0.15,  # Barras próximas mas não coladas
+        hovermode='x unified',
+        xaxis={'tickangle': -45 if rotate_labels else 0}
+    )
+
+    # Remover todos os botões confusos do Plotly (zoom, pan, autoscale, etc)
+    config = {
+        'displayModeBar': False,  # Remove a barra de ferramentas completamente
+        'displaylogo': False
+    }
+
+    st.plotly_chart(fig, use_container_width=True, config=config)
 
 
 def render_leads_by_inbox_chart(leads_by_inbox):

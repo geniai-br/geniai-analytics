@@ -950,6 +950,139 @@ Nenhum! Código compila sem erros de sintaxe.
 
 ---
 
-**Última atualização:** 2025-11-12 13:55
-**Status:** ✅ Fase 1-6 COMPLETA | ⏳ Fase 7 PENDENTE
+## 📊 MELHORIAS UX - GRÁFICO "LEADS POR DIA" (IMPLEMENTADA)
+
+**Data:** 2025-11-12
+**Status:** ✅ COMPLETA
+
+### Histórico de Iterações
+
+#### Iteração 1: Reduzir Espaçamento entre Barras
+**Problema:** Barras do gráfico estavam muito separadas, dificultando visualização
+**Solução:**
+- Substituído `st.bar_chart()` por `plotly.express.px.bar()`
+- Adicionado `bargap=0.15` para barras mais próximas
+- Agrupamento por **DATA** (não datetime) para eliminar separação por horário
+
+**Localização:** `client_dashboard.py` linhas 515-693
+
+#### Iteração 2: Remover Controles Confusos do Plotly
+**Problema:** Botões de zoom/pan/autoscale confundem usuários (não sabem como reverter)
+**Solução:**
+```python
+config = {
+    'displayModeBar': False,  # Remove barra de ferramentas completamente
+    'displaylogo': False
+}
+
+st.plotly_chart(fig, use_container_width=True, config=config)
+```
+
+#### Iteração 3: Escalabilidade para Períodos Longos
+**Problema:** 365 dias resultaria em 365 barras ilegíveis
+**Solução:** Agrupamento inteligente automático
+- ≤60 dias → Diário
+- 61-90 dias → Semanal
+- >90 dias → Mensal
+
+#### Iteração 4: Filtros de Período
+**Problema:** Usuário quer controlar range e granularidade
+**Solução:** Dropdown com 9 opções:
+- Últimos 7/15/30 dias
+- Mês atual/passado
+- Últimos 3/6 meses
+- Último ano
+- Todos os dados
+
+#### Iteração 5: Simplificação - Remover Dropdown "Agrupar por" (ATUAL)
+
+**Problema:** Usuário achou dropdown "Agrupar por" confuso
+**Feedback do Usuário:**
+> "Acho que não faz muito sentido isso de agrupar por... Se eu quero os últimos 7 dias, quero que apareça APENAS os últimos 7 dias... O agrupar por deixa meio confuso a experiência!"
+
+**Solução Implementada:**
+- ❌ Removido dropdown "Agrupar por" (Automático/Dia/Semana/Mês)
+- ✅ Granularidade agora é **determinada automaticamente** pelo período selecionado
+- ✅ Interface simplificada: **1 dropdown** ao invés de 2
+
+**Mapeamento Período → Granularidade:**
+
+| Período Selecionado | Granularidade | Resultado |
+|---------------------|---------------|-----------|
+| Últimos 7 dias | Diário | 7 barras (uma por dia) |
+| Últimos 15 dias | Diário | 15 barras |
+| Últimos 30 dias | Diário | 30 barras |
+| Mês atual | Mensal | 1 barra (total do mês) |
+| Mês passado | Mensal | 1 barra |
+| Últimos 3 meses | Mensal | 3 barras |
+| Últimos 6 meses | Mensal | 6 barras |
+| Último ano | Mensal | 12 barras |
+| Todos os dados | Inteligente | Baseado no total de dias (≤60: diário, ≤90: semanal, >90: mensal) |
+
+**Código Modificado:**
+
+**Antes (2 dropdowns):**
+```python
+col_periodo, col_agrupamento = st.columns([2, 1])
+
+with col_periodo:
+    periodo_grafico = st.selectbox("📅 Período:", options=[...])
+
+with col_agrupamento:
+    agrupamento_manual = st.selectbox("📊 Agrupar por:",
+                                       options=["Automático", "Dia", "Semana", "Mês"])
+```
+
+**Depois (1 dropdown):**
+```python
+periodo_grafico = st.selectbox("📅 Período:", options=[...])
+```
+
+**Lógica Simplificada:**
+```python
+if periodo_grafico in ["Últimos 7 dias", "Últimos 15 dias", "Últimos 30 dias"]:
+    # Diário
+    leads_filtrados['Periodo'] = leads_filtrados['Data'].dt.strftime('%d/%m')
+
+elif periodo_grafico in ["Mês atual", "Mês passado"]:
+    # Mensal (1 barra)
+    agrupado = leads_filtrados.groupby(
+        leads_filtrados['Data'].dt.to_period('M')
+    ).agg({'Leads': 'sum'}).reset_index()
+
+elif periodo_grafico in ["Últimos 3 meses", "Últimos 6 meses", "Último ano"]:
+    # Mensal (múltiplas barras)
+    agrupado = leads_filtrados.groupby(
+        leads_filtrados['Data'].dt.to_period('M')
+    ).agg({'Leads': 'sum'}).reset_index()
+
+else:  # "Todos os dados"
+    # Inteligente (baseado em num_days)
+    if num_days > 90:
+        # Mensal
+    elif num_days > 60:
+        # Semanal
+    else:
+        # Diário
+```
+
+### 📊 Impacto
+
+**Linhas de Código:**
+- **Removidas:** ~30 linhas (dropdown manual + lógica condicional)
+- **Simplificadas:** ~50 linhas (lógica de agrupamento)
+- **Saldo:** -80 linhas (código mais limpo)
+
+**UX:**
+- ✅ Interface mais simples e intuitiva
+- ✅ Menos decisões para o usuário (1 dropdown vs 2)
+- ✅ Comportamento previsível: período determina granularidade
+- ✅ Mantém flexibilidade (9 opções de período)
+
+**Localização:** `client_dashboard.py` linhas 528-693
+
+---
+
+**Última atualização:** 2025-11-12 14:20
+**Status:** ✅ Fase 1-6 COMPLETA | ✅ Melhorias UX COMPLETA | ⏳ Fase 7 PENDENTE
 **Commits:** `9bde18a` (Fase 1-3) | `bd86fe2` (Fase 4) | `e2eee98` (Fase 5) | `e528ef9` (Fase 6)
