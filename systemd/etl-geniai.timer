@@ -1,0 +1,20 @@
+[Unit]
+Description=ETL GeniAI Analytics - Execução Automática a cada 30 minutos
+Documentation=https://github.com/geniai/analytics
+Requires=etl-geniai.service
+
+[Timer]
+# Executar a cada 30 minutos (XX:00 e XX:30)
+OnCalendar=*:00/30
+
+# Se o sistema estava desligado no horário agendado, executar assim que ligar
+Persistent=true
+
+# Adicionar aleatoriedade de até 2 minutos (evitar sobrecarga)
+RandomizedDelaySec=2min
+
+# Unidade a ser iniciada
+Unit=etl-geniai.service
+
+[Install]
+WantedBy=timers.target

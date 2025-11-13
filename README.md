@@ -1,4 +1,4 @@
-# 📊 AllpFit Analytics
+# 📊 GeniAI Analytics
 
 <div align="center">
 
@@ -40,7 +40,7 @@ Sistema completo de analytics que extrai dados de conversas do Chatwoot (banco r
 ## 🏗️ Estrutura do Projeto
 
 ```
-allpfit-analytics/
+geniai-analytics/
 ├── src/
 │   ├── app/                    # Dashboard Streamlit
 │   │   ├── dashboard.py        # Dashboard principal

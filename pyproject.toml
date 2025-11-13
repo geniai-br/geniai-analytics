@@ -3,14 +3,14 @@ requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "allpfit-analytics"
+name = "geniai-analytics"
 version = "1.2.0"
 description = "Dashboard para análise de conversas de agente de IA do sistema Chatwoot"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
-    {name = "GenIAI", email = "contato@geniai.com"}
+    {name = "GeniAI", email = "contato@geniai.com"}
 ]
 keywords = ["analytics", "dashboard", "chatbot", "ai", "streamlit"]
 classifiers = [
@@ -40,10 +40,10 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/geniai-br/allpfit-analytics"
-Documentation = "https://github.com/geniai-br/allpfit-analytics/blob/main/README.md"
-Repository = "https://github.com/geniai-br/allpfit-analytics.git"
-Issues = "https://github.com/geniai-br/allpfit-analytics/issues"
+Homepage = "https://github.com/geniai-br/geniai-analytics"
+Documentation = "https://github.com/geniai-br/geniai-analytics/blob/main/README.md"
+Repository = "https://github.com/geniai-br/geniai-analytics.git"
+Issues = "https://github.com/geniai-br/geniai-analytics/issues"
 
 [tool.black]
 line-length = 120
