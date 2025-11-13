@@ -255,7 +255,7 @@ def calculate_metrics(df):
 
 def prepare_leads_by_day(df):
     """
-    Prepara dados de leads por dia para gráfico
+    Prepara dados de leads por dia para gráfico (consolidado)
 
     Args:
         df: DataFrame com conversas
@@ -280,6 +280,41 @@ def prepare_leads_by_day(df):
     leads_by_day = leads_by_day.sort_values('Data')
 
     return leads_by_day
+
+
+def prepare_leads_by_day_with_inbox(df):
+    """
+    Prepara dados de leads por dia E por inbox (para stacked bar chart)
+
+    Args:
+        df: DataFrame com conversas
+
+    Returns:
+        pd.DataFrame: Leads agrupados por dia e inbox (formato: Data, Inbox1, Inbox2, ...)
+    """
+    if df.empty:
+        return pd.DataFrame()
+
+    # Filtrar apenas leads
+    leads_df = df[df['is_lead'] == True].copy()
+
+    if leads_df.empty:
+        return pd.DataFrame()
+
+    # Agrupar por data E inbox
+    leads_grouped = leads_df.groupby(['conversation_date', 'inbox_name']).size().reset_index(name='Leads')
+
+    # Pivotar para ter inbox como colunas
+    leads_pivot = leads_grouped.pivot(index='conversation_date', columns='inbox_name', values='Leads').fillna(0)
+
+    # Resetar index para ter 'Data' como coluna
+    leads_pivot = leads_pivot.reset_index()
+    leads_pivot.rename(columns={'conversation_date': 'Data'}, inplace=True)
+
+    # Ordenar por data
+    leads_pivot = leads_pivot.sort_values('Data')
+
+    return leads_pivot
 
 
 def prepare_leads_by_inbox(df):
@@ -512,12 +547,13 @@ def render_kpis(metrics):
     # Data: 2025-11-11 (pós-apresentação)
 
 
-def render_leads_chart(leads_by_day):
+def render_leads_chart(leads_by_day, df_full=None):
     """
-    Renderiza gráfico de leads por dia
+    Renderiza gráfico de leads por dia (consolidado ou por inbox)
 
     Args:
-        leads_by_day: DataFrame com leads agrupados por dia
+        leads_by_day: DataFrame com leads agrupados por dia (consolidado)
+        df_full: DataFrame completo com todas conversas (para split por inbox)
     """
     if leads_by_day.empty:
         st.info("ℹ️ Nenhum lead para exibir no período selecionado")
@@ -525,12 +561,15 @@ def render_leads_chart(leads_by_day):
 
     st.subheader("📈 Leads por Dia")
 
-    # === FILTRO DE PERÍODO DO GRÁFICO ===
-    periodo_grafico = st.selectbox(
-        "📅 Período:",
-        options=[
-            "Últimos 7 dias",
-            "Últimos 15 dias",
+    # === TOGGLE: CONSOLIDADO vs POR INBOX ===
+    col_periodo, col_viz = st.columns([3, 2])
+
+    with col_periodo:
+        periodo_grafico = st.selectbox(
+            "📅 Período:",
+            options=[
+                "Últimos 7 dias",
+                "Últimos 15 dias",
             "Últimos 30 dias",
             "Mês atual",
             "Mês passado",
@@ -542,6 +581,17 @@ def render_leads_chart(leads_by_day):
         index=2,  # Default: Últimos 30 dias
         key="periodo_grafico_leads"
     )
+
+    with col_viz:
+        # Radio buttons horizontal para escolher visualização
+        viz_mode = st.radio(
+            "📊 Visualização:",
+            options=["Consolidado", "Por Inbox"],
+            index=0,
+            key="viz_mode_leads",
+            horizontal=True,
+            help="Consolidado: total de leads por dia | Por Inbox: leads separados por inbox (stacked)"
+        )
 
     # Filtrar dados baseado no período selecionado
     from datetime import datetime, timedelta
@@ -651,46 +701,160 @@ def render_leads_chart(leads_by_day):
             x_col = 'Periodo'
             x_title = 'Data'
 
-    # Usar Plotly com configuração simplificada (sem botões confusos)
+    # === RENDERIZAR GRÁFICO: CONSOLIDADO vs POR INBOX ===
     import plotly.express as px
+    import plotly.graph_objects as go
 
-    fig = px.bar(
-        chart_data,
-        x=x_col,
-        y='Leads',
-        title='',
-        labels={x_col: x_title, 'Leads': 'Quantidade de Leads'},
-        text='Leads'
-    )
+    if viz_mode == "Consolidado":
+        # MODO CONSOLIDADO: Barra única azul por período
+        fig = px.bar(
+            chart_data,
+            x=x_col,
+            y='Leads',
+            title='',
+            labels={x_col: x_title, 'Leads': 'Quantidade de Leads'},
+            text='Leads'
+        )
 
-    # Ajustar layout para barras mais próximas
-    fig.update_traces(
-        textposition='outside',
-        marker_color='#1f77b4',
-        hovertemplate=f'<b>{x_title}:</b> %{{x}}<br><b>Leads:</b> %{{y}}<extra></extra>'
-    )
+        fig.update_traces(
+            textposition='outside',
+            marker_color='#1f77b4',
+            hovertemplate=f'<b>{x_title}:</b> %{{x}}<br><b>Leads:</b> %{{y}}<extra></extra>'
+        )
 
-    # Decidir rotação de labels baseado na quantidade de barras
-    num_bars = len(chart_data)
-    rotate_labels = num_bars > 30
+        num_bars = len(chart_data)
+        rotate_labels = num_bars > 30
 
-    fig.update_layout(
-        xaxis_title=x_title,
-        yaxis_title='Leads',
-        showlegend=False,
-        height=400,
-        bargap=0.15,  # Barras próximas mas não coladas
-        hovermode='x unified',
-        xaxis={'tickangle': -45 if rotate_labels else 0}
-    )
+        fig.update_layout(
+            xaxis_title=x_title,
+            yaxis_title='Leads',
+            showlegend=False,
+            height=400,
+            bargap=0.15,
+            hovermode='x unified',
+            xaxis={'tickangle': -45 if rotate_labels else 0}
+        )
 
-    # Remover todos os botões confusos do Plotly (zoom, pan, autoscale, etc)
+    else:
+        # MODO POR INBOX: Stacked bar chart colorido 🎨
+        if df_full is None or df_full.empty:
+            st.warning("⚠️ Dados completos não disponíveis para visualização por inbox")
+            return
+
+        # Preparar dados por inbox
+        leads_inbox_full = prepare_leads_by_day_with_inbox(df_full)
+
+        if leads_inbox_full.empty:
+            st.info("ℹ️ Nenhum lead para exibir")
+            return
+
+        # Aplicar filtros de período
+        leads_inbox_full['Data'] = pd.to_datetime(leads_inbox_full['Data'])
+
+        if periodo_grafico == "Últimos 7 dias":
+            data_corte = hoje - timedelta(days=7)
+            leads_inbox_filtered = leads_inbox_full[leads_inbox_full['Data'] >= data_corte].copy()
+        elif periodo_grafico == "Últimos 15 dias":
+            data_corte = hoje - timedelta(days=15)
+            leads_inbox_filtered = leads_inbox_full[leads_inbox_full['Data'] >= data_corte].copy()
+        elif periodo_grafico == "Últimos 30 dias":
+            data_corte = hoje - timedelta(days=30)
+            leads_inbox_filtered = leads_inbox_full[leads_inbox_full['Data'] >= data_corte].copy()
+        elif periodo_grafico == "Mês atual":
+            inicio_mes = hoje.replace(day=1)
+            leads_inbox_filtered = leads_inbox_full[leads_inbox_full['Data'] >= inicio_mes].copy()
+        elif periodo_grafico == "Mês passado":
+            inicio_mes_passado = (hoje.replace(day=1) - timedelta(days=1)).replace(day=1)
+            fim_mes_passado = hoje.replace(day=1) - timedelta(days=1)
+            leads_inbox_filtered = leads_inbox_full[
+                (leads_inbox_full['Data'] >= inicio_mes_passado) &
+                (leads_inbox_full['Data'] <= fim_mes_passado)
+            ].copy()
+        elif periodo_grafico == "Últimos 3 meses":
+            data_corte = hoje - timedelta(days=90)
+            leads_inbox_filtered = leads_inbox_full[leads_inbox_full['Data'] >= data_corte].copy()
+        elif periodo_grafico == "Últimos 6 meses":
+            data_corte = hoje - timedelta(days=180)
+            leads_inbox_filtered = leads_inbox_full[leads_inbox_full['Data'] >= data_corte].copy()
+        elif periodo_grafico == "Último ano":
+            data_corte = hoje - timedelta(days=365)
+            leads_inbox_filtered = leads_inbox_full[leads_inbox_full['Data'] >= data_corte].copy()
+        else:
+            leads_inbox_filtered = leads_inbox_full.copy()
+
+        if leads_inbox_filtered.empty:
+            st.info(f"ℹ️ Nenhum lead no período: **{periodo_grafico}**")
+            return
+
+        # Aplicar granularidade
+        if periodo_grafico in ["Últimos 7 dias", "Últimos 15 dias", "Últimos 30 dias"]:
+            leads_inbox_filtered['Periodo'] = leads_inbox_filtered['Data'].dt.strftime('%d/%m')
+            x_title_inbox = 'Data'
+        elif periodo_grafico in ["Mês atual", "Mês passado"]:
+            leads_inbox_filtered['Periodo'] = leads_inbox_filtered['Data'].dt.strftime('%b/%Y')
+            x_title_inbox = 'Mês'
+        elif periodo_grafico in ["Últimos 3 meses", "Últimos 6 meses", "Último ano"]:
+            leads_inbox_filtered['Periodo'] = leads_inbox_filtered['Data'].dt.strftime('%b/%Y')
+            x_title_inbox = 'Mês'
+        else:
+            num_days_inbox = len(leads_inbox_filtered)
+            if num_days_inbox > 90:
+                leads_inbox_filtered['Periodo'] = leads_inbox_filtered['Data'].dt.strftime('%b/%Y')
+                x_title_inbox = 'Mês'
+            elif num_days_inbox > 60:
+                leads_inbox_filtered['Periodo'] = leads_inbox_filtered['Data'].dt.strftime('%d/%m')
+                x_title_inbox = 'Semana'
+            else:
+                leads_inbox_filtered['Periodo'] = leads_inbox_filtered['Data'].dt.strftime('%d/%m')
+                x_title_inbox = 'Data'
+
+        # Criar stacked bar chart
+        inbox_columns = [col for col in leads_inbox_filtered.columns if col not in ['Data', 'Periodo']]
+        colors = px.colors.qualitative.Set2 + px.colors.qualitative.Pastel
+
+        fig = go.Figure()
+
+        for idx, inbox_col in enumerate(inbox_columns):
+            fig.add_trace(go.Bar(
+                x=leads_inbox_filtered['Periodo'],
+                y=leads_inbox_filtered[inbox_col],
+                name=inbox_col,
+                marker_color=colors[idx % len(colors)],
+                hovertemplate=f'<b>{inbox_col}</b><br>Leads: %{{y}}<extra></extra>'
+            ))
+
+        num_bars_inbox = len(leads_inbox_filtered)
+        rotate_labels_inbox = num_bars_inbox > 30
+
+        fig.update_layout(
+            barmode='stack',
+            xaxis_title=x_title_inbox,
+            yaxis_title='Leads',
+            showlegend=True,
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1
+            ),
+            height=450,
+            bargap=0.15,
+            hovermode='x unified',
+            xaxis={'tickangle': -45 if rotate_labels_inbox else 0}
+        )
+
+    # Remover botões confusos do Plotly
     config = {
-        'displayModeBar': False,  # Remove a barra de ferramentas completamente
+        'displayModeBar': False,
         'displaylogo': False
     }
 
     st.plotly_chart(fig, use_container_width=True, config=config)
+
+    # Dica de interatividade (apenas no modo "Por Inbox")
+    if viz_mode == "Por Inbox":
+        st.caption("💡 **Dica:** Clique nos nomes das inboxes na legenda acima para mostrar/ocultar no gráfico")
 
 
 def render_leads_by_inbox_chart(leads_by_inbox):
@@ -1552,37 +1716,12 @@ def show_client_dashboard(session, tenant_id=None):
         )
 
     with col4:
-        # Filtro por Inbox
-        tenant_inboxes = get_tenant_inboxes(display_tenant_id)
+        # Placeholder para filtro de inbox (será populado após carregar dados)
+        inbox_filter_placeholder = st.empty()
 
-        # Opções do selectbox: "Todas as Inboxes" + inboxes do tenant
-        inbox_options = ["Todas as Inboxes"] + [inbox['name'] for inbox in tenant_inboxes]
-
-        # Inicializar valor padrão apenas uma vez
-        if 'inbox_filter' not in st.session_state:
-            st.session_state['inbox_filter'] = "Todas as Inboxes"
-
-        # Selectbox com key direto (sem gerenciar index manualmente)
-        selected_inbox_name = st.selectbox(
-            "Inbox",
-            options=inbox_options,
-            key="inbox_filter"
-        )
-
-        # Converter nome para ID (se não for "Todas")
-        selected_inbox_id = None
-        if selected_inbox_name != "Todas as Inboxes":
-            for inbox in tenant_inboxes:
-                if inbox['name'] == selected_inbox_name:
-                    selected_inbox_id = inbox['id']
-                    break
-
-    # REMOVIDO: Filtros OpenAI específicos AllpFit (analise_ia, probabilidade_conversao, condicao_fisica, objetivo)
-    # Ver: src/multi_tenant/dashboards/_archived/allpfit_specific_functions.py
-
-    # === CARREGAR DADOS ===
+    # === CARREGAR DADOS (SEM FILTRO DE INBOX PRIMEIRO) ===
     with st.spinner("🔄 Carregando dados..."):
-        df_original = load_conversations(display_tenant_id, date_start, date_end, inbox_filter=selected_inbox_id)
+        df_original = load_conversations(display_tenant_id, date_start, date_end, inbox_filter=None)
 
     if df_original.empty:
         st.warning("⚠️ Nenhum dado encontrado para o período selecionado")
@@ -1598,11 +1737,29 @@ def show_client_dashboard(session, tenant_id=None):
         """)
         st.stop()
 
-    # REMOVIDO: Aplicação de filtros OpenAI específicos AllpFit
-    # Ver: src/multi_tenant/dashboards/_archived/allpfit_specific_functions.py
+    # === RENDERIZAR FILTRO DE INBOX COM DADOS REAIS ===
+    # Extrair inboxes reais dos dados carregados
+    inbox_names_real = sorted(df_original['inbox_name'].dropna().unique().tolist())
+    inbox_options_real = ["Todas as Inboxes"] + inbox_names_real
+
+    # Inicializar session state
+    if 'inbox_filter_global' not in st.session_state:
+        st.session_state['inbox_filter_global'] = "Todas as Inboxes"
+
+    # Renderizar selectbox no placeholder
+    with inbox_filter_placeholder:
+        selected_inbox_name = st.selectbox(
+            "Inbox",
+            options=inbox_options_real,
+            key="inbox_filter_global"
+        )
 
     # === APLICAR FILTROS RÁPIDOS === [FASE 4 - NOVO]
     df_filtered = df_original.copy()
+
+    # NOVO: Filtro por Inbox Global (selecionado no topo)
+    if selected_inbox_name != "Todas as Inboxes":
+        df_filtered = df_filtered[df_filtered['inbox_name'] == selected_inbox_name]
 
     # Filtro por Nome (busca parcial, case-insensitive)
     if st.session_state.filter_nome:
@@ -1656,7 +1813,7 @@ def show_client_dashboard(session, tenant_id=None):
 
     # Linha 1: Leads por dia (largura completa)
     leads_by_day = prepare_leads_by_day(df)
-    render_leads_chart(leads_by_day)
+    render_leads_chart(leads_by_day, df_full=df)
 
     st.divider()
 
