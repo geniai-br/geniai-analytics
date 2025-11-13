@@ -31,13 +31,21 @@ def get_next_etl_time(last_sync: datetime = None) -> dict:
     # Horários: XX:00, XX:30 (de cada hora)
     current_hour = now_utc.hour
     current_minute = now_utc.minute
+    current_second = now_utc.second
 
     # Determinar próximo horário (00 ou 30)
-    if current_minute < 30:
-        # Próximo é XX:30
+    # IMPORTANTE: Considerar segundos! Se já passou do horário exato (ex: 13:30:01), ir para o próximo
+    if current_minute < 30 or (current_minute == 30 and current_second == 0):
+        # Próximo é XX:30 da hora atual (se ainda não passou)
         next_etl_utc = now_utc.replace(hour=current_hour, minute=30, second=0, microsecond=0)
+        # Se já passou das XX:30:00, ir para a próxima hora
+        if next_etl_utc <= now_utc:
+            if current_hour == 23:
+                next_etl_utc = (now_utc + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+            else:
+                next_etl_utc = now_utc.replace(hour=current_hour + 1, minute=0, second=0, microsecond=0)
     else:
-        # Próximo é (XX+1):00
+        # current_minute >= 30: Próximo é (XX+1):00
         if current_hour == 23:
             # Próximo dia, 00:00
             next_etl_utc = (now_utc + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
