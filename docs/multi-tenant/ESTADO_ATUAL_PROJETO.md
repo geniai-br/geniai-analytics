@@ -1,9 +1,10 @@
 # 🎯 ESTADO ATUAL DO PROJETO - GeniAI Multi-Tenant Analytics
 
-> **Data desta Análise:** 2025-11-10
-> **Branch Atual:** feature/multi-tenant-system
-> **Status Geral:** 🟢 **PRONTO PARA APRESENTAÇÃO**
-> **Próximo Milestone:** Aprovação superiores → Rollout OpenAI para todos os tenants
+> **Data desta Análise:** 2025-11-13
+> **Branch Atual:** feature/dashboard-generico
+> **Status Geral:** 🟢 **DASHBOARD GENÉRICO COMPLETO**
+> **Último Commit:** `44f739d` - "feat: Toggle Por Inbox + Fix filtro global + Stacked bar chart"
+> **Próximo Milestone:** Apresentação para novos clientes → Onboarding multi-segmento
 
 ---
 
@@ -11,115 +12,207 @@
 
 ### O que Foi Construído
 
-Um **sistema SaaS multi-tenant completo** de analytics para academias CrossFit, com:
+Um **sistema SaaS multi-tenant 100% genérico** de analytics para empresas que usam Chatwoot, aplicável a **qualquer segmento** (academias, educação, financeiro, varejo, saúde, etc.):
 
-- ✅ **10 tenants** cadastrados (1 ativo com dados reais, 9 prontos para onboarding)
-- ✅ **Dashboard completo** com análise de leads, funil de conversão, exportação CSV
-- ✅ **Painel Admin** para gerenciar clientes, usuários e configurações
-- ✅ **ETL automatizado** (systemd timer, executa a cada 6 horas)
-- ✅ **Análise com IA (OpenAI GPT-4o-mini)** em produção para 1 tenant (AllpFit)
+- ✅ **5 tenants ativos** com dados reais (AllpFit, CDT Mossoró, CDT JP Sul, Allp Fit JP Sul, CDT Viamao)
+- ✅ **Dashboard 100% genérico** - removidos campos fitness-específicos (condição física, objetivo)
+- ✅ **Painel Admin** para gerenciar clientes e usuários
+- ✅ **ETL automatizado** incremental com watermark
 - ✅ **RLS (Row-Level Security)** garantindo isolamento total entre tenants
 - ✅ **Autenticação bcrypt** + sessões seguras
-- ✅ **Personalização por tenant** (logo, cores, branding)
+- ✅ **Análise por Inbox** com toggle consolidado/separado
+- ✅ **Conversas compiladas** com prévia e visualização completa
+- ✅ **Filtros rápidos** (6 filtros acima da tabela)
+- ✅ **Exportação CSV** formatada
 
-### Números Atuais
+### Números Atuais (13/Nov/2025)
 
 | Métrica | Valor | Observação |
 |---------|-------|------------|
-| **Total de Conversas** | 1.293 | Tenant AllpFit (ID=1) |
-| **Conversas Analisadas com IA** | 742 (57,4%) | Processamento incremental |
-| **Leads Detectados** | 383 | Taxa de 51,6% entre analisadas |
-| **Visitas Agendadas** | 72 | 9,7% das conversas analisadas |
-| **Taxa Alta Probabilidade** | 215 (29,0%) | Conversas com score 4-5 |
-| **Tenants Ativos** | 1 de 10 | AllpFit em produção |
-| **OpenAI Habilitado** | 1 tenant | AllpFit (demonstração) |
-| **Custo OpenAI** | ~R$ 0,75 | Processamento de 742 conversas |
-| **Uptime ETL** | 100% | Últimas 3 execuções: success |
-| **Performance ETL** | 22,9 min | 742 conversas (0,5 conv/s) |
+| **Total de Conversas** | 3.667 | Todos os 5 tenants ativos |
+| **Tenant 1 (AllpFit)** | 1.317 conversas | Maior base de dados |
+| **Tenant 14 (CDT Mossoró)** | 683 conversas | |
+| **Tenant 15 (CDT JP Sul)** | 323 conversas | |
+| **Tenant 16 (Allp Fit JP Sul)** | 1.008 conversas | |
+| **Tenant 17 (CDT Viamao)** | 336 conversas | |
+| **Tenants Ativos** | 5 de 13 | Outros aguardam dados |
+| **Usuários Cadastrados** | 9 usuários | Super admin, admins, clientes |
+| **Uptime Dashboard** | 1+ dia | Porta 8504 estável |
+| **Performance Dashboard** | < 3s | Carregamento completo |
 
 ---
 
-## 🚀 MARCOS HISTÓRICOS (Timeline)
+## 🚀 MARCOS HISTÓRICOS (Timeline Completa)
 
-### **Fase 1-3: Fundação (até 2025-11-05)**
+### **Fases 1-5.7: Sistema Multi-Tenant com OpenAI (Até 10/Nov)**
 - ✅ Arquitetura multi-tenant com RLS
-- ✅ 10 tabelas criadas + índices otimizados
-- ✅ ETL v4 completo (extração, transformação, loading)
-- ✅ Migração de 1.293 conversas do AllpFit
-
-**Commit Principal:** `5e4dbb6` - "feat(etl): implement complete multi-tenant ETL pipeline (Phase 3)"
-
----
-
-### **Fase 4: Dashboard Cliente (2025-11-06)**
-- ✅ Dashboard cliente com 6 KPIs principais
-- ✅ 3 gráficos interativos (leads/dia, leads/inbox, distribuição score)
-- ✅ Funil de conversão visual (3 etapas)
-- ✅ Exportação CSV com 15 colunas formatadas
-- ✅ Filtros avançados (data, inbox, status)
-- ✅ Personalização por tenant (branding)
-- ✅ Performance: < 3s para carregar dashboard
-
-**Resultado:** 322 leads detectados (29,1%) usando análise Regex
-
-**Commit Principal:** `0891c02` - "Finaliza Fase 4: Dashboard Cliente 100% completo"
-
-**Documentação:** [FASE4_RESUMO_FINAL.md](./FASE4_RESUMO_FINAL.md)
-
----
-
-### **Fase 5: Dashboard Admin + Automação (2025-11-06)**
-- ✅ Painel admin com overview de todos os clientes
-- ✅ Gerenciamento completo de usuários (CRUD)
-- ✅ Métricas agregadas (todos os tenants)
-- ✅ ETL automatizado via systemd timer (a cada 6 horas)
-- ✅ Indicador de próxima atualização no dashboard
-- ✅ Filtros por inbox no cliente
-
-**Commit Principal:** `db42936` - "feat(admin): Implementar Dashboard Admin completo - Fase 5"
-
----
-
-### **Fase 5.5: Melhorias Dashboard (2025-11-06)**
-- ✅ Métricas de qualidade (percentual leads, conversão)
-- ✅ Taxa de conversão total (lead → visita → CRM)
-- ✅ Correção de bugs no cálculo de percentuais
-
-**Commit Principal:** `7f67273` - "feat: adicionar métricas de qualidade ao dashboard (FASE 5.5)"
-
----
-
-### **Fase 5.6: Integração OpenAI - Foundation (2025-11-09)**
-- ✅ Adapter Pattern (BaseAnalyzer, RegexAnalyzer, OpenAIAnalyzer)
-- ✅ Configuração por tenant (`use_openai: true/false`)
-- ✅ Fallback automático Regex ↔ OpenAI
-- ✅ GPT-4o-mini com análise estruturada (JSON)
-- ✅ Análise completa: probabilidade, visita, análise detalhada, sugestão de mensagem
-- ✅ AllpFit configurado como tenant piloto
-
-**Resultado Inicial:** Sistema testado, pronto para produção
-
-**Commit Principal:** `9684296` - "feat(openai): implementar análise OpenAI multi-tenant"
-
-**Documentação:** [EXECUTIVE_SUMMARY.md](./EXECUTIVE_SUMMARY.md)
-
----
-
-### **Fase 5.7: Otimizações OpenAI - Produção (2025-11-10)** ⭐ **ATUAL**
-- ✅ **Processamento paralelo** (ThreadPoolExecutor, 5 workers)
-- ✅ **Correção de NULL bytes** (crashes PostgreSQL)
-- ✅ **Skip inteligente** (não reprocessa conversas já analisadas)
-- ✅ **Scripts de monitoramento** (watch_etl_parallel.sh)
-- ✅ **Execução em produção** (742 conversas analisadas)
-
-**Resultado:**
-- Performance: **9+ horas → 22,9 minutos** (5x mais rápido)
-- Estabilidade: **100%** (0 crashes)
-- Custo: **R$ 0,001 por conversa** (~R$ 0,75 total)
-
-**Commit Principal:** `7c25f28` - "feat(openai): otimizações críticas de performance e estabilidade"
+- ✅ ETL v4 completo (Chatwoot → PostgreSQL)
+- ✅ Dashboard cliente com análise OpenAI
+- ✅ Análise GPT-4o-mini (507 conversas analisadas no Tenant 1)
+- ✅ Otimizações de performance (5x mais rápido)
 
 **Documentação:** [FASE5_7_OTIMIZACOES_OPENAI.md](./FASE5_7_OTIMIZACOES_OPENAI.md)
+
+---
+
+### **⭐ MUDANÇA CRÍTICA: Pós-Apresentação (11/Nov)**
+
+Após apresentação aos superiores, foi decidido:
+- ❌ **Remover campos fitness-específicos** do dashboard (condição física, objetivo, análise IA detalhada)
+- ✅ **Tornar dashboard 100% genérico** aplicável a qualquer segmento
+- ✅ **Preservar dados no banco** (apenas ocultos na UI)
+- 📋 **Sistema futuro**: Cada cliente escolhe análise customizada (implementação: Johan + Superior)
+
+**Documentação:** [MODIFICACOES_POS_APRESENTACAO.md](./MODIFICACOES_POS_APRESENTACAO.md)
+
+---
+
+### **Fase 1-3: Dashboard Genérico (11/Nov)** - Commit `9bde18a`
+
+**Campos REMOVIDOS do dashboard:**
+- `condicao_fisica` - Sedentário/Ativo/Atleta (específico fitness)
+- `objetivo` - Emagrecimento/Ganho de massa (específico fitness)
+- `analise_ia` - Análise GPT-4 detalhada em 3-5 parágrafos (específico AllpFit)
+- `sugestao_disparo` - Mensagem personalizada (específico fitness)
+- `probabilidade_conversao` - Score 0-5 (contexto fitness)
+
+**Funcionalidades ARQUIVADAS:**
+- Funil de Conversão AllpFit (Leads → Visitas → CRM)
+- Filtros OpenAI específicos (análise IA, probabilidade alta)
+- Modal de Análise IA Detalhada
+- Métricas de Qualidade (4 cards)
+
+**Localização:** [`src/multi_tenant/dashboards/_archived/`](../../src/multi_tenant/dashboards/_archived/)
+
+**Impacto:**
+- ✅ Dashboard aplicável a **qualquer segmento** (educação, financeiro, varejo, saúde)
+- ✅ Dados preservados no banco (possível reativar se necessário)
+- ✅ ~200 linhas removidas + ~350 linhas arquivadas
+
+**Documentação:** [IMPLEMENTACAO_DASHBOARD_GENERICO.md](./IMPLEMENTACAO_DASHBOARD_GENERICO.md)
+
+---
+
+### **Fase 4: Filtros Rápidos (11/Nov)** - Commit `bd86fe2`
+
+**Implementado:**
+- ✅ 6 filtros acima da tabela de leads
+  1. Nome (busca parcial, case-insensitive)
+  2. Telefone (busca parcial)
+  3. Inboxes (multi-select)
+  4. Status (Lead, Visita Agendada, CRM Convertido)
+  5. Classificação IA (Alto, Médio, Baixo)
+  6. Score IA Mínimo (slider 0-100%)
+- ✅ Botão "Limpar Filtros" com contador de filtros ativos
+- ✅ Session state persistente
+- ✅ Feedback visual (contador de filtros)
+
+**Bugs Corrigidos:**
+- 🐛 Filtro de inbox mostrava inboxes inexistentes (sincronizado com dados reais)
+- 🐛 Dashboard travava quando filtros retornavam zero resultados
+
+**Impacto:**
+- +200 linhas de código
+- UX: Filtros sempre acessíveis, mesmo com resultados vazios
+
+---
+
+### **Fase 5: Análise por Inbox (11/Nov)** - Commit `e2eee98`
+
+**Implementado:**
+- ✅ Nova seção "📬 Análise por Inbox"
+- ✅ Toggle de visualização (radio buttons horizontal):
+  - **Visão Agregada:** 5 cards de métricas + gráfico Plotly
+  - **Visão Separada:** Tabela completa de métricas + Top 3 cards
+- ✅ Métricas calculadas:
+  - Total conversas, leads, visitas, CRM por inbox
+  - Taxas de conversão (leads e CRM)
+  - Tempo médio de primeira resposta
+
+**Removido:**
+- ❌ Seção "Métricas de Qualidade" (4 cards)
+- Arquivado em: `_archived/quality_metrics_removed.py`
+
+**Impacto:**
+- +240 linhas (análise inbox)
+- -60 linhas (métricas qualidade)
+- Saldo: +180 linhas
+
+---
+
+### **Fase 6: Conversas Compiladas (12/Nov)** - Commits `e528ef9` + `fc2ee72`
+
+**Implementado:**
+- ✅ Coluna "Prévia Conversa" na tabela (3 primeiras mensagens)
+- ✅ Seção "Ver Conversas Completas" com até 10 expanders
+- ✅ Emojis por tipo de sender:
+  - 👤 Contact (Contato)
+  - 🤖 AgentBot (Bot)
+  - 👨‍💼 User (Atendente)
+- ✅ Cores distintas por tipo (verde/azul/laranja)
+- ✅ Timestamps formatados (dd/mm/yyyy HH:MM)
+- ✅ Indicador de mensagens extras (+N mensagens)
+
+**Bug Crítico Corrigido:**
+- 🐛 Boolean ambiguity com JSONB/Pandas arrays
+- **Problema:** `pd.isna()` retorna array ao invés de booleano quando recebe listas JSONB
+- **Solução:** Verificar `isinstance()` ANTES de usar `pd.isna()`
+- **Impacto:** Dashboard quebrava ao carregar conversas
+
+**Análise de Performance:**
+- Top 10 conversas: 14 KB, ~236ms
+- Todas 394 conversas: 597 KB, ~7s (40x mais lento)
+- **Decisão:** Limitar a 10 conversas (97.7% economia de dados)
+
+**Impacto:**
+- +180 linhas de código
+- UX: Contexto completo das conversas sem sair do dashboard
+
+---
+
+### **Melhorias UX - Gráfico "Leads por Dia" (12/Nov)** - Commit `76dd3af`
+
+**Simplificação:**
+- ❌ Removido dropdown "Agrupar por" (confuso para usuários)
+- ✅ Granularidade automática baseada no período selecionado:
+  - Últimos 7/15/30 dias → **Diário**
+  - Mês atual/passado → **Mensal** (1 barra)
+  - Últimos 3/6 meses → **Mensal** (múltiplas barras)
+  - Último ano → **Mensal** (12 barras)
+  - Todos os dados → **Inteligente** (≤60: diário, ≤90: semanal, >90: mensal)
+
+**Impacto:**
+- -80 linhas de código
+- Interface: 1 dropdown ao invés de 2
+- UX: Mais simples e intuitivo
+
+---
+
+### **⭐ Última Implementação: Toggle Por Inbox (12/Nov)** - Commit `44f739d`
+
+**Implementado:**
+- ✅ Toggle no gráfico "Leads por Dia": **Consolidado** vs **Por Inbox**
+- ✅ Modo "Por Inbox": Stacked bar chart colorido (Plotly Graph Objects)
+- ✅ Paleta profissional: Set2 + Pastel (cores distintas por inbox)
+- ✅ Legenda horizontal transparente (sem fundo)
+- ✅ Legenda interativa (clicável para show/hide inboxes)
+- ✅ Caption educativa: "Clique nos nomes das inboxes na legenda para mostrar/ocultar"
+- ✅ Sincronização total com filtros globais e de período
+
+**Bug Crítico Corrigido:**
+- 🐛 Filtro inbox global mostrava inboxes inexistentes
+- **Problema:** Buscava do mapeamento `inbox_tenant_mapping` ao invés de dados reais
+- **Solução:** Extrair inboxes REAIS dos dados (`df_original['inbox_name'].unique()`)
+- **Impacto:** Elimina inboxes "fantasma", sincronização perfeita
+
+**Impacto:**
+- +210 linhas de código
+- UX: Análise comparativa entre inboxes ao longo do tempo
+- Visual: Profissional com cores e interatividade
+
+**Feedback do Usuário:**
+> "Ficou muito bom a separação no Leads por Dia!!! Era isso que eu queria"
+> "Agora ficou top!"
 
 ---
 
@@ -129,240 +222,105 @@ Um **sistema SaaS multi-tenant completo** de analytics para academias CrossFit, 
 
 ```
 Backend:
-├── PostgreSQL 14 (geniai_analytics)
+├── PostgreSQL 15 (geniai_analytics)
 │   ├── RLS (Row-Level Security)
-│   ├── TimescaleDB (time-series otimizado)
-│   └── 10 tabelas + 15+ índices
+│   ├── 10 tabelas + 20+ índices
+│   └── Usuário owner: johan_geniai
 
 ├── Python 3.11
 │   ├── pandas (transformações)
 │   ├── psycopg2 (database)
-│   ├── openai (GPT-4o-mini)
 │   └── bcrypt (auth)
 
 ├── ETL v4 Multi-Tenant
-│   ├── Extractor (Chatwoot API)
+│   ├── Extractor (Chatwoot remoto)
 │   ├── Transformer (limpeza, agregação)
 │   ├── Loader (upsert incremental)
-│   └── Analyzers (Regex + OpenAI)
+│   └── Analyzers (Regex - OpenAI arquivado)
 
 Frontend:
-├── Streamlit 1.28+
-│   ├── app.py (router principal)
+├── Streamlit 1.29+
+│   ├── app.py (router principal - porta 8504)
 │   ├── login_page.py
 │   ├── admin_panel.py
 │   └── client_dashboard.py
 
-Infraestrutura:
-├── Systemd Timer (ETL automático a cada 6h)
-├── Nginx (proxy reverso, HTTPS - futuro)
-└── Git (feature/multi-tenant-system)
+Automação:
+├── Systemd Timer (ETL - PLANEJADO, não ativo)
+└── Git (feature/dashboard-generico)
 ```
 
 ---
 
-### Estrutura de Pastas
+### Banco de Dados
 
-```
-/home/tester/projetos/allpfit-analytics/
-│
-├── docs/
-│   ├── multi-tenant/
-│   │   ├── 00_INDEX.md                           # Índice principal
-│   │   ├── 00_CRONOGRAMA_MASTER.md               # 6 fases planejadas
-│   │   ├── DB_DOCUMENTATION.md                   # Docs do banco
-│   │   ├── FASE4_RESUMO_FINAL.md                 # Fase 4 completa
-│   │   ├── FASE5_7_OTIMIZACOES_OPENAI.md         # Otimizações IA
-│   │   ├── EXECUTIVE_SUMMARY.md                  # Planejamento OpenAI
-│   │   └── ESTADO_ATUAL_PROJETO.md               # ← VOCÊ ESTÁ AQUI
-│   │
-│   └── architecture/
-│       ├── adr/                                   # Architecture Decision Records
-│       │   ├── ADR-001-arquitetura-multitenant-rls.md
-│       │   ├── ADR-002-etl-pipeline-incremental.md
-│       │   ├── ADR-003-timescaledb-time-series.md
-│       │   ├── ADR-004-streamlit-dashboard-framework.md
-│       │   └── ADR-005-openai-conversation-analysis.md
-│       └── ARCHITECTURE_SUMMARY.md
-│
-├── src/
-│   └── multi_tenant/
-│       ├── auth/
-│       │   ├── auth.py                           # Autenticação bcrypt
-│       │   └── middleware.py                     # RLS config
-│       │
-│       ├── dashboards/
-│       │   ├── app.py                            # Router (porta 8504)
-│       │   ├── login_page.py                     # Tela de login
-│       │   ├── admin_panel.py                    # Painel admin
-│       │   ├── client_dashboard.py               # Dashboard cliente
-│       │   └── branding.py                       # Personalização
-│       │
-│       └── etl_v4/
-│           ├── pipeline.py                       # Orquestração ETL
-│           ├── extractor.py                      # Chatwoot API
-│           ├── transformer.py                    # Limpeza e agregação
-│           ├── loader.py                         # Upsert PostgreSQL
-│           │
-│           └── analyzers/
-│               ├── base_analyzer.py              # Interface abstrata
-│               ├── regex_analyzer.py             # Análise baseada em regex
-│               └── openai_analyzer.py            # Análise com GPT-4o-mini ⭐
-│
-├── sql/
-│   └── multi_tenant/
-│       ├── 01_create_database.sql
-│       ├── 02_create_schema.sql
-│       ├── 03_create_policies.sql                # RLS policies
-│       ├── 04_create_users.sql
-│       ├── 05_seed_data.sql
-│       └── 06_tenant_configs.sql                 # Configurações tenants
-│
-├── tests/
-│   ├── watch_etl_parallel.sh                     # Monitor visual ETL ⭐
-│   └── test_etl_openai_incremental.py            # Teste incremental ⭐
-│
-├── systemd/
-│   ├── allpfit-etl.service                       # Serviço ETL
-│   └── allpfit-etl.timer                         # Timer (6h)
-│
-└── README.md
-```
+**Database:** `geniai_analytics`
+**Host:** localhost (PostgreSQL 15)
 
-**Total de Código:**
-- 25 arquivos Python (src/multi_tenant)
-- 9 arquivos de teste (tests/)
-- 15+ documentos (docs/)
-- ~8.000 linhas de código Python
-- ~2.000 linhas de SQL
+**Credenciais:**
+- **Owner:** `johan_geniai` / `vlVMVM6UNz2yYSBlzodPjQvZh`
+- **App:** `isaac` / `AllpFit2024@Analytics`
+- **Sudo:** `c0d75dbc6bdd`
+
+**Banco Remoto (Source):**
+- **Host:** 178.156.206.184:5432
+- **Database:** chatwoot
+- **Usuário:** `hetzner_dev_isaac_read` (read-only)
+- **Senha:** `89cc59cca789`
+
+---
+
+### Tabelas Principais (10 tabelas)
+
+1. **tenants** - 13 registros (5 ativos)
+2. **users** - 9 usuários cadastrados
+3. **conversations_analytics** - 3.667 conversas (5 tenants)
+4. **conversations_analytics_ai** - 507 análises OpenAI (Tenant 1 apenas - DADOS ARQUIVADOS)
+5. **conversations_analytics_backup** - Backup de segurança
+6. **inbox_tenant_mapping** - Mapeamento inbox → tenant
+7. **tenant_configs** - Configurações por tenant
+8. **sessions** - Sessões de login
+9. **etl_control** - 307 execuções registradas
+10. **audit_logs** - Logs de auditoria
+
+---
+
+### Distribuição de Dados (13/Nov/2025)
+
+| Tenant ID | Nome | Conversas | Contatos Únicos | Status |
+|-----------|------|-----------|-----------------|--------|
+| 1 | AllpFit CrossFit | 1.317 | 1.306 | ✅ Ativo |
+| 14 | CDT Mossoró | 683 | 521 | ✅ Ativo |
+| 15 | CDT JP Sul | 323 | 297 | ✅ Ativo |
+| 16 | Allp Fit JP Sul | 1.008 | 996 | ✅ Ativo |
+| 17 | CDT Viamao | 336 | 335 | ✅ Ativo |
+| **TOTAL** | **5 tenants ativos** | **3.667** | **3.455** | |
 
 ---
 
 ## 🔧 COMPONENTES PRINCIPAIS
 
-### 1. ETL Pipeline Multi-Tenant
+### 1. Dashboard Multi-Tenant Genérico
 
-**Fluxo:**
-```
-┌─────────────────┐
-│  Chatwoot API   │
-│  (10 tenants)   │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│   Extractor     │ ← Busca conversas via API
-│   (por tenant)  │ ← Incremental (watermark)
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  Transformer    │ ← Limpeza e agregação
-│  (25 colunas)   │ ← Regex + OpenAI (config)
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│     Loader      │ ← Upsert (ON CONFLICT UPDATE)
-│  (PostgreSQL)   │ ← Tracking (etl_control)
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  conversations_ │
-│    analytics    │ ← Dados prontos para dashboard
-└─────────────────┘
-```
-
-**Automação:**
-- **Trigger:** Systemd timer (a cada 6 horas)
-- **Execução:** Sequencial por tenant (evita rate limiting)
-- **Monitoramento:** Tabela `etl_control` (status, duração, registros)
-- **Logs:** `/var/log/allpfit-etl.log`
-
-**Performance:**
-- AllpFit (1.293 conversas): 22,9 minutos (com OpenAI)
-- Outros tenants (sem dados): < 30 segundos cada
-
----
-
-### 2. Sistema de Análise Inteligente
-
-#### **Arquitetura (Adapter Pattern)**
-
-```python
-BaseAnalyzer (Abstract)
-├── RegexAnalyzer
-│   ├── Palavras-chave: treino, plano, aula experimental, horário
-│   ├── Performance: 2s para 1.099 conversas
-│   └── Accuracy: ~80% (estimado)
-│
-└── OpenAIAnalyzer ⭐
-    ├── Modelo: gpt-4o-mini
-    ├── Performance: 22,9 min para 742 conversas (5 workers paralelos)
-    ├── Accuracy: ~95% (target)
-    ├── Custo: R$ 0,001 por conversa
-    └── Features:
-        ├── Probabilidade de lead (0-5)
-        ├── Detecção de visita agendada
-        ├── Extração de entidades (nome, condição, objetivo)
-        ├── Análise detalhada (raciocínio)
-        └── Sugestão de mensagem personalizada
-```
-
-#### **Configuração por Tenant**
-
-```sql
--- AllpFit (ID=1): OpenAI habilitado
-UPDATE tenant_configs
-SET features = '{"use_openai": true}'::jsonb
-WHERE tenant_id = 1;
-
--- Demais tenants (3,4,5,9,10,11,13,14,15): Regex
-UPDATE tenant_configs
-SET features = '{"use_openai": false}'::jsonb
-WHERE tenant_id != 1;
-```
-
-#### **Skip Logic (Incremental)**
-
-O sistema **NÃO reprocessa** conversas já analisadas:
-
-```python
-# openai_analyzer.py (linhas 386-401)
-if skip_analyzed and 'analise_ia' in df.columns:
-    needs_analysis = (df['analise_ia'].isna()) | (df['analise_ia'] == '')
-    df_to_analyze = df[needs_analysis].copy()
-
-    # Logs
-    logger.info(f"✅ Já analisadas (pulando): {len(df_already_analyzed)}")
-    logger.info(f"🔄 Pendentes (processando): {len(df_to_analyze)}")
-```
-
-**Resultado:**
-- Novas conversas: `analise_ia IS NULL` → Processadas
-- Conversas existentes: `analise_ia != ''` → **Puladas**
-- Economia: ~60% do tempo em execuções subsequentes
-
----
-
-### 3. Dashboard Multi-Tenant
-
-#### **Acesso:**
+**Acesso:**
 - **URL:** http://localhost:8504
-- **Porta:** 8504 (Streamlit)
+- **Status:** ✅ Rodando (PID 4105619)
+- **Uptime:** Desde 12/Nov (1+ dia estável)
 
-#### **Credenciais:**
+**Credenciais de Teste:**
 
-| Usuário | Email | Senha | Role | Acesso |
-|---------|-------|-------|------|--------|
-| Admin GeniAI | admin@geniai.com.br | senha123 | super_admin | Painel Admin + Todos os clientes |
-| Isaac (AllpFit) | isaac@allpfit.com.br | senha123 | admin | Dashboard AllpFit |
-| João (AllpFit) | joao@allpfit.com.br | senha123 | viewer | Dashboard AllpFit (read-only) |
+| Email | Senha | Role | Tenant | Logins |
+|-------|-------|------|--------|--------|
+| admin@geniai.com.br | senha123 | super_admin | GeniAI Admin | 33 |
+| isaac@allpfit.com.br | senha123 | admin | AllpFit | 4 |
+| admin@cdtmossoro.com | senha123 | admin | CDT Mossoró | 0 |
+| admin@cdtjpsul.com | senha123 | admin | CDT JP Sul | 0 |
 
-#### **Funcionalidades (Cliente):**
+---
 
-**KPIs Principais:**
+### 2. Funcionalidades do Dashboard Cliente
+
+**KPIs Principais (6 cards):**
 1. Total de Conversas
 2. Leads Detectados
 3. Taxa de Leads (%)
@@ -370,158 +328,102 @@ if skip_analyzed and 'analise_ia' in df.columns:
 5. Conversões CRM
 6. Taxa de Conversão (%)
 
-**Gráficos:**
-1. Leads por Dia (linha temporal)
-2. Leads por Inbox (barras horizontais)
-3. Distribuição de Score (barras)
+**Seções:**
+1. **📬 Análise por Inbox** (Toggle: Agregada vs Separada)
+2. **📊 Gráficos Interativos:**
+   - Leads por Dia (Toggle: Consolidado vs Por Inbox, Stacked chart colorido)
+   - Leads por Inbox (barras horizontais)
+   - Distribuição de Score IA (barras)
+3. **📋 Tabela de Leads** (com 6 filtros rápidos)
+4. **💬 Conversas Compiladas** (até 10 expanders com conversa completa)
 
-**Funil de Conversão:**
-```
-Conversas (1.293)
-    ↓ 51,6%
-Leads (383)
-    ↓ 18,8%
-Visitas (72)
-    ↓ ?%
-CRM (74) ← Dado histórico
-```
-
-**Filtros:**
+**Filtros Globais:**
 - Data (início e fim)
-- Inbox (WhatsApp, Instagram, etc.)
+- Inbox (dropdown com inboxes reais)
 - Status (aberto, resolvido, pendente)
 
-**Exportação:**
-- Formato: CSV (UTF-8 BOM)
-- Colunas: 15 (id, nome, email, telefone, análise IA, etc.)
-- Nome arquivo: `leads_allpfit_20251101_20251110.csv`
+**Filtros Rápidos (acima da tabela):**
+- Nome (busca parcial)
+- Telefone (busca parcial)
+- Inboxes (multi-select)
+- Status (Lead, Visita, CRM)
+- Classificação IA (Alto, Médio, Baixo)
+- Score IA Mínimo (slider 0-100%)
+- Botão "Limpar Filtros" com contador
 
-#### **Funcionalidades (Admin):**
+**Exportação CSV:**
+- Formato: UTF-8 BOM (compatível Excel)
+- Colunas: 11 genéricas (id, nome, email, telefone, inbox, data, lead, visita, CRM, classificação, score)
+- Nome arquivo: `leads_{tenant}_{data_inicio}_{data_fim}.csv`
 
-**Overview:**
-- Total de clientes ativos
-- Total de conversas (todos os tenants)
-- Média de leads por cliente
-- Tenant com mais conversas
+---
 
-**Gerenciamento:**
-- CRUD de usuários (criar, editar, desativar)
-- Filtro por tenant
-- Visualizar logs de auditoria
-- Selecionar cliente para ver dashboard
+### 3. Colunas Genéricas (Exibidas no Dashboard)
 
-**Navegação:**
+**Identificação:**
+- `conversation_display_id`
+- `contact_name`
+- `contact_phone`
+- `contact_email`
+
+**Inbox e Temporal:**
+- `inbox_name`
+- `conversation_date`
+- `primeiro_contato` (mc_first_message_at)
+- `ultimo_contato` (mc_last_message_at)
+
+**Status e Classificação:**
+- `is_lead` (Boolean)
+- `visit_scheduled` (Boolean)
+- `crm_converted` (Boolean)
+- `ai_probability_label` (Alto/Médio/Baixo)
+- `ai_probability_score` (0-100)
+
+**Conversa:**
+- `nome_mapeado_bot` (nome extraído - 42% preenchimento)
+- `message_compiled` (JSONB com conversa completa - 99.9%)
+
+---
+
+### 4. Colunas AllpFit-Específicas (OCULTAS, mas no banco)
+
+**Preservadas para possível reativação:**
+- `condicao_fisica` (2.2% preenchimento)
+- `objetivo` (3% preenchimento)
+- `analise_ia` (56% preenchimento - Tenant 1 apenas)
+- `sugestao_disparo`
+- `probabilidade_conversao`
+
+**Status:** Dados intactos, apenas não exibidos no dashboard genérico.
+
+---
+
+### 5. ETL Pipeline Multi-Tenant
+
+**Fluxo:**
 ```
-Login → Admin Panel → Selecionar Cliente → Dashboard Cliente
-  ↑                                             ↓
-  └──────────────── Voltar ────────────────────┘
+Chatwoot Remoto (178.156.206.184)
+    ↓
+Extractor (por tenant, incremental com watermark)
+    ↓
+Transformer (25 colunas, limpeza, agregação)
+    ↓
+Loader (UPSERT: ON CONFLICT UPDATE)
+    ↓
+conversations_analytics (PostgreSQL local)
+    ↓
+Dashboard Streamlit (RLS por tenant)
 ```
 
----
+**Performance:**
+- Execução incremental: 2-5 segundos (sem novos dados)
+- Última execução: 13/Nov 08:03 (5 tenants, 0 novos registros)
+- Total de execuções: 307 registros em `etl_control`
 
-## 🎯 DECISÕES TÉCNICAS PRINCIPAIS (ADRs)
-
-### ADR-001: Arquitetura Multi-Tenant com RLS
-**Decisão:** Single database com Row-Level Security
-
-**Alternativas consideradas:**
-- Database per tenant (rejeitado: complexidade operacional)
-- Schema per tenant (rejeitado: limites PostgreSQL)
-
-**Benefícios:**
-- ✅ Isolamento nativo no PostgreSQL
-- ✅ Backup único
-- ✅ Queries agregadas simples
-- ✅ Menor custo operacional
-
-**Trade-offs:**
-- ⚠️ Requer disciplina (sempre SET app.current_tenant_id)
-- ⚠️ Testing mais complexo
-
-**Documentação:** [ADR-001](../architecture/adr/ADR-001-arquitetura-multitenant-rls.md)
-
----
-
-### ADR-002: ETL Pipeline Incremental
-**Decisão:** Incremental com watermark (última execução)
-
-**Alternativas consideradas:**
-- Full refresh (rejeitado: lento, caro)
-- CDC (Change Data Capture) (rejeitado: overkill)
-
-**Benefícios:**
-- ✅ Apenas novos dados
-- ✅ 10x mais rápido que full
-- ✅ Menor uso da API Chatwoot
-
-**Trade-offs:**
-- ⚠️ Requer controle de watermark
-- ⚠️ Possível drift (resolvido com full refresh semanal)
-
-**Documentação:** [ADR-002](../architecture/adr/ADR-002-etl-pipeline-incremental.md)
-
----
-
-### ADR-003: TimescaleDB para Time-Series
-**Decisão:** Usar TimescaleDB extension
-
-**Alternativas consideradas:**
-- PostgreSQL puro (funciona, mas menos otimizado)
-- InfluxDB (rejeitado: mais uma tecnologia)
-
-**Benefícios:**
-- ✅ Queries temporais otimizadas
-- ✅ Compressão automática
-- ✅ Compatible com PostgreSQL
-
-**Trade-offs:**
-- ⚠️ Requer extensão (fácil de instalar)
-
-**Documentação:** [ADR-003](../architecture/adr/ADR-003-timescaledb-time-series.md)
-
----
-
-### ADR-004: Streamlit para Dashboards
-**Decisão:** Streamlit como framework de frontend
-
-**Alternativas consideradas:**
-- React + FastAPI (rejeitado: muito trabalho)
-- Dash (rejeitado: menos comunidade)
-- Grafana (rejeitado: menos flexível)
-
-**Benefícios:**
-- ✅ Desenvolvimento rápido (Python puro)
-- ✅ Componentes prontos (charts, filtros)
-- ✅ Deploy simples
-
-**Trade-offs:**
-- ⚠️ Performance em dashboards muito complexos
-- ⚠️ Customização limitada vs React
-
-**Documentação:** [ADR-004](../architecture/adr/ADR-004-streamlit-dashboard-framework.md)
-
----
-
-### ADR-005: OpenAI para Análise de Conversas
-**Decisão:** GPT-4o-mini com fallback para Regex
-
-**Alternativas consideradas:**
-- Regex puro (atual, mas limitado)
-- Modelo local (LLama, rejeitado: infra complexa)
-- GPT-4 (rejeitado: 20x mais caro)
-
-**Benefícios:**
-- ✅ Accuracy: 80% → 95% (+15pp)
-- ✅ Contexto semântico completo
-- ✅ Custo baixo (R$ 0,001/conversa)
-- ✅ Sem infra adicional
-
-**Trade-offs:**
-- ⚠️ Performance: 2s → 23min (742 conversas)
-- ⚠️ Dependência externa (mitigado com fallback)
-- ⚠️ Custo variável (mitigado com budget limit)
-
-**Documentação:** [ADR-005](../architecture/adr/ADR-005-openai-conversation-analysis.md)
+**Status Atual:**
+- ✅ Pipeline funcional
+- ⏸️ Systemd timer NÃO configurado (execução manual quando necessário)
+- ✅ 0% error rate (100% confiável)
 
 ---
 
@@ -531,11 +433,11 @@ Login → Admin Panel → Selecionar Cliente → Dashboard Cliente
 - ✅ Bcrypt (cost factor 12)
 - ✅ Sessões com token UUID
 - ✅ Expiração: 24 horas
-- ✅ Logout seguro (deleta sessão)
+- ✅ Logout seguro (deleta sessão do banco)
 
 ### Autorização
 - ✅ RLS (Row-Level Security) no PostgreSQL
-- ✅ Policies por role (super_admin, admin, viewer)
+- ✅ Policies por role (super_admin, admin, client)
 - ✅ Middleware: `SET app.current_tenant_id`
 - ✅ Validação de tenant_id em todas as queries
 
@@ -543,487 +445,317 @@ Login → Admin Panel → Selecionar Cliente → Dashboard Cliente
 - ✅ Tenant não vê dados de outros tenants
 - ✅ Admin vê apenas seu tenant
 - ✅ Super_admin vê todos (policy especial)
-- ✅ Logs de auditoria (audit_logs)
-
-### API Keys
-- ✅ Chatwoot API tokens por tenant
-- ✅ OpenAI API key (variável de ambiente)
-- ✅ Senhas PostgreSQL não commitadas
+- ✅ Logs de auditoria (`audit_logs`)
 
 ---
 
-## 💰 CUSTOS E ROI
+## 📈 PERFORMANCE E MÉTRICAS
 
-### Custos Operacionais (Mensal)
-
-| Item | Valor | Observação |
-|------|-------|------------|
-| **OpenAI API** | R$ 9 | 750 conversas/mês @ R$ 0,001 cada |
-| **Servidor VPS** | R$ 50-100 | 2 vCPU, 4GB RAM, 80GB SSD |
-| **PostgreSQL** | R$ 0 | Self-hosted no VPS |
-| **Manutenção** | R$ 300 | 2h/mês @ R$ 150/h |
-| **Total** | R$ 359-409 | Por tenant com OpenAI |
-
-### ROI Projetado (por tenant)
-
-**Premissas:**
-- 750 conversas/mês
-- Taxa de leads: 22% (OpenAI) vs 18% (Regex)
-- Taxa de conversão lead → venda: 10%
-- Ticket médio: R$ 500
-
-**Cálculo:**
-```
-Leads adicionais: (750 × 22%) - (750 × 18%) = 165 - 135 = +30 leads/mês
-Conversões adicionais: 30 × 10% = +3 vendas/mês
-Receita adicional: 3 × R$ 500 = +R$ 1.500/mês
-
-ROI mensal: (R$ 1.500 - R$ 409) / R$ 409 = 267%
-ROI anual: R$ 1.500 × 12 - R$ 409 × 12 = R$ 13.092 lucro líquido
-```
-
-**Conclusão:** ✅ ROI positivo em todos os cenários
-
----
-
-## 📈 MÉTRICAS DE QUALIDADE
-
-### Performance
+### Performance Atual
 
 | Operação | Target | Atual | Status |
 |----------|--------|-------|--------|
-| **Login** | < 2s | ~500ms | ✅ 4x melhor |
-| **Carregar Dashboard** | < 5s | ~3s | ✅ 40% melhor |
-| **Query Leads** | < 100ms | ~4ms | ✅ 96% melhor |
-| **Exportar CSV** | < 3s | ~1s | ✅ 67% melhor |
-| **ETL (AllpFit)** | < 30min | 22,9min | ✅ 24% melhor |
-| **Análise OpenAI** | < 30min | 22,9min | ✅ Within target |
+| Login | < 2s | ~500ms | ✅ 4x melhor |
+| Carregar Dashboard | < 5s | ~3s | ✅ 40% melhor |
+| Query Leads | < 100ms | ~4ms | ✅ 96% melhor |
+| Exportar CSV | < 3s | ~1s | ✅ 67% melhor |
+| ETL Incremental | < 30s | 2-5s | ✅ 6-15x melhor |
 
 ### Confiabilidade
 
 | Métrica | Target | Atual | Status |
 |---------|--------|-------|--------|
-| **Uptime ETL** | > 95% | 100% | ✅ |
-| **Error Rate ETL** | < 5% | 0% | ✅ |
-| **Crash Rate** | 0% | 0% | ✅ |
-| **Data Loss** | 0% | 0% | ✅ |
-
-### Código
-
-| Métrica | Target | Atual | Status |
-|---------|--------|-------|--------|
-| **Documentação** | > 80% | ~90% | ✅ |
-| **Type Hints** | > 50% | ~70% | ✅ |
-| **Commits Descritivos** | 100% | 100% | ✅ |
-| **Dívida Técnica** | Baixa | Baixa | ✅ |
+| Uptime Dashboard | > 95% | 100% | ✅ |
+| Error Rate ETL | < 5% | 0% | ✅ |
+| Crash Rate | 0% | 0% | ✅ |
+| Data Loss | 0% | 0% | ✅ |
 
 ---
 
-## 🎓 LIÇÕES APRENDIDAS
+## 🎯 ESTADO ATUAL: CHECKPOINT (13/Nov/2025)
+
+### ✅ O que Está COMPLETO
+
+1. **Dashboard 100% Genérico**
+   - Removidos campos fitness-específicos
+   - Aplicável a qualquer segmento
+   - Dados preservados no banco
+   - Código arquivado para possível reativação
+
+2. **Funcionalidades Avançadas**
+   - Filtros rápidos (6 filtros + limpar)
+   - Análise por Inbox (toggle agregada/separada)
+   - Conversas compiladas (prévia + expanders)
+   - Gráfico Leads por Dia (toggle consolidado/por inbox)
+   - Stacked bar chart colorido
+
+3. **Sistema Multi-Tenant Robusto**
+   - 5 tenants ativos com dados reais
+   - RLS garantindo isolamento total
+   - Autenticação bcrypt segura
+   - ETL incremental confiável
+
+4. **UX/UI Profissional**
+   - Interface simples e intuitiva
+   - Feedback visual (contadores, tooltips)
+   - Performance < 3s carregamento
+   - Responsivo e escalável
+
+### ⏸️ O que Está ARQUIVADO (Não Deletado)
+
+1. **Análise OpenAI AllpFit-Específica**
+   - Dados: 507 conversas analisadas (Tenant 1)
+   - Localização: `conversations_analytics_ai` (tabela intacta)
+   - Código: `src/multi_tenant/dashboards/_archived/`
+   - Status: Preservado para possível reativação
+
+2. **Campos Fitness-Específicos**
+   - `condicao_fisica`, `objetivo`, `analise_ia`, `sugestao_disparo`
+   - Localização: Colunas da tabela `conversations_analytics`
+   - Status: Dados intactos, apenas ocultos na UI
+
+### 🔜 Próximos Passos (Planejados)
+
+1. **Apresentação para Novos Clientes**
+   - Dashboard genérico pronto para demonstração
+   - Material: Este documento + dashboard ao vivo
+   - Objetivo: Onboarding de clientes multi-segmento
+
+2. **Onboarding de Novos Clientes**
+   - Criar usuários para novos tenants
+   - Configurar branding (logo, cores)
+   - Treinamento básico
+   - Documentação de usuário
+
+3. **Sistema Futuro de Análise Customizável**
+   - Cada cliente escolhe tipo de análise
+   - Templates por segmento (academia, educação, financeiro)
+   - Implementação: Johan + Superior
+   - Status: Em planejamento
+
+4. **Melhorias Técnicas (Baixa Prioridade)**
+   - Testes automatizados (pytest)
+   - Cache Redis (se > 10.000 conversas/tenant)
+   - Monitoramento Grafana
+   - API REST (se necessário)
+
+---
+
+## 📚 DOCUMENTAÇÃO RELACIONADA
+
+### Documentação Técnica
+- [MODIFICACOES_POS_APRESENTACAO.md](./MODIFICACOES_POS_APRESENTACAO.md) - Requisitos pós-reunião com superiores
+- [IMPLEMENTACAO_DASHBOARD_GENERICO.md](./IMPLEMENTACAO_DASHBOARD_GENERICO.md) - Changelog completo das Fases 1-6
+- [FASE5_7_OTIMIZACOES_OPENAI.md](./FASE5_7_OTIMIZACOES_OPENAI.md) - Otimizações OpenAI (arquivado)
+- [README_USUARIOS.md](./README_USUARIOS.md) - Guia de usuários do banco de dados
+
+### Código Arquivado
+- [`_archived/allpfit_specific_functions.py`](../../src/multi_tenant/dashboards/_archived/allpfit_specific_functions.py) - Funções AllpFit preservadas
+- [`_archived/quality_metrics_removed.py`](../../src/multi_tenant/dashboards/_archived/quality_metrics_removed.py) - Métricas de qualidade removidas
+
+---
+
+## 🎨 ESTRUTURA DE ARQUIVOS ATUAL
+
+```
+/home/tester/projetos/allpfit-analytics/
+│
+├── src/
+│   └── multi_tenant/
+│       ├── auth/
+│       │   ├── auth.py                    # Autenticação bcrypt
+│       │   └── middleware.py              # RLS config
+│       │
+│       ├── dashboards/
+│       │   ├── app.py                     # Router (porta 8504)
+│       │   ├── login_page.py              # Tela de login
+│       │   ├── admin_panel.py             # Painel admin
+│       │   ├── client_dashboard.py        # Dashboard cliente GENÉRICO ⭐
+│       │   └── _archived/                 # ⭐ NOVO
+│       │       ├── README.md
+│       │       ├── allpfit_specific_functions.py
+│       │       └── quality_metrics_removed.py
+│       │
+│       └── etl_v4/
+│           ├── pipeline.py                # Orquestração ETL
+│           ├── extractor.py               # Chatwoot remoto
+│           ├── transformer.py             # Limpeza e agregação
+│           ├── loader.py                  # Upsert PostgreSQL
+│           └── analyzers/
+│               ├── base_analyzer.py       # Interface abstrata
+│               ├── regex_analyzer.py      # Análise baseada em regex ✅ ATIVO
+│               └── openai_analyzer.py     # OpenAI (arquivado, não usado)
+│
+├── docs/
+│   └── multi-tenant/
+│       ├── ESTADO_ATUAL_PROJETO.md        # ← VOCÊ ESTÁ AQUI
+│       ├── MODIFICACOES_POS_APRESENTACAO.md
+│       ├── IMPLEMENTACAO_DASHBOARD_GENERICO.md
+│       ├── FASE5_7_OTIMIZACOES_OPENAI.md
+│       └── README_USUARIOS.md
+│
+└── README.md
+```
+
+---
+
+## 🎓 LIÇÕES APRENDIDAS (Atualizado)
 
 ### ✅ O que Funcionou Muito Bem
 
-1. **Planejamento antes de codificar**
-   - Economizou ~40% do tempo
-   - Menos refactoring necessário
-   - ADRs documentaram decisões importantes
+1. **Planejamento Detalhado Antes de Implementar**
+   - Documentos MODIFICACOES_POS_APRESENTACAO.md e IMPLEMENTACAO_DASHBOARD_GENERICO.md guiaram toda a refatoração
+   - Evitou retrabalho e garantiu consistência
 
-2. **Adapter Pattern para Analyzers**
-   - Facilita trocar Regex ↔ OpenAI
-   - Código modular e testável
-   - Fácil adicionar novos analyzers
+2. **Arquivamento ao Invés de Deletar**
+   - Código AllpFit-específico preservado em `_archived/`
+   - Dados no banco intactos (apenas ocultos na UI)
+   - Fácil reativar se necessário
 
-3. **RLS desde o início**
-   - Isolamento nativo e confiável
-   - Sem esquecimentos (PostgreSQL garante)
-   - Menos código de validação
+3. **Commits Descritivos e Incrementais**
+   - 6 commits principais (Fases 1-6)
+   - Cada commit testado e funcional
+   - Facilita rollback se necessário
 
-4. **Incremental ETL**
-   - 10x mais rápido que full
-   - Menor custo de API
-   - Menos carga no banco
+4. **Feedback Contínuo do Usuário**
+   - Iterações UX baseadas em feedback real
+   - Exemplo: Remover dropdown "Agrupar por" (confuso) → Granularidade automática
 
-5. **Documentação contínua**
-   - Sempre atualizada
-   - Facilita retomar trabalho
-   - Útil para apresentações
+5. **Toggle ao Invés de Páginas Separadas**
+   - Visão Agregada vs Separada (Análise por Inbox)
+   - Consolidado vs Por Inbox (Leads por Dia)
+   - UX mais simples, menos cliques
 
-### 🔧 O que Melhorar
+### 🔧 O que Melhorar (Próximas Iterações)
 
 1. **Testes Automatizados**
-   - Atual: apenas scripts manuais
+   - Atual: Testes manuais apenas
    - Futuro: pytest + CI/CD
 
-2. **Monitoramento**
-   - Atual: logs + queries manuais
-   - Futuro: Grafana + alertas automáticos
+2. **Documentação de Usuário**
+   - Atual: Apenas documentação técnica
+   - Futuro: Guias visuais para end-users
 
-3. **Tratamento de Erros**
-   - Atual: logs detalhados
-   - Futuro: retry automático + notificações
-
-4. **Performance Dashboard**
-   - Atual: 3s (bom, mas pode melhorar)
-   - Futuro: cache Redis (< 1s)
+3. **Monitoramento Proativo**
+   - Atual: Logs manuais
+   - Futuro: Grafana + alertas
 
 ---
 
 ## 🚧 DÉBITOS TÉCNICOS CONHECIDOS
 
-### Baixa Prioridade (Não Bloqueante)
+### Baixa Prioridade
 
-1. **Testes Automatizados**
-   - Impacto: Médio
-   - Esforço: 2-3 dias
-   - Quando: Antes de produção em larga escala
+1. **Systemd Timer para ETL**
+   - Impacto: Baixo (ETL manual funciona bem)
+   - Esforço: 1 hora (já foi implementado antes)
+   - Quando: Quando tiver mais de 10 tenants ativos
 
 2. **Cache Redis**
    - Impacto: Baixo (performance já boa)
    - Esforço: 1 dia
-   - Quando: Se tiver > 10.000 conversas por tenant
+   - Quando: Se tiver > 10.000 conversas/tenant
 
-3. **Grafana Dashboard**
-   - Impacto: Baixo (logs funcionam bem)
-   - Esforço: 1 dia
-   - Quando: Quando tiver 10+ tenants ativos
-
-4. **API REST**
+3. **API REST**
    - Impacto: Baixo (dashboard web suficiente)
    - Esforço: 3-5 dias
    - Quando: Se precisar integração externa
 
-### Zero Prioridade (Não Necessário Agora)
-
-- App mobile nativo
-- Notificações push
-- Multi-idioma (i18n)
-- Dark mode customizável
-
 ---
 
-## 🎯 ESTADO ATUAL: CHECKPOINT
-
-### ✅ O que Está Pronto
-
-1. **Sistema Multi-Tenant Completo**
-   - Banco de dados com RLS
-   - 10 tenants cadastrados
-   - Autenticação e autorização
-   - Isolamento total de dados
-
-2. **ETL Automatizado**
-   - Incremental (watermark)
-   - Paralelo (5 workers OpenAI)
-   - Robusto (0% error rate)
-   - Agendado (systemd timer, 6h)
-
-3. **Análise Inteligente**
-   - Regex (baseline)
-   - OpenAI GPT-4o-mini (piloto)
-   - Skip logic (incremental)
-   - Fallback automático
-
-4. **Dashboards**
-   - Cliente: KPIs, gráficos, funil, exportação
-   - Admin: overview, gestão de usuários
-   - Personalização: branding por tenant
-
-5. **Documentação**
-   - 15+ documentos markdown
-   - 5 ADRs (decisões arquiteturais)
-   - README atualizado
-   - Guias de uso
-
-### ⏸️ O que Está em Piloto
-
-1. **OpenAI Analysis**
-   - Status: ✅ Produção (AllpFit apenas)
-   - Resultado: 742 conversas analisadas
-   - Estabilidade: 100%
-   - Custo: R$ 0,75 (total)
-
-**Razão do piloto:** Aguardando aprovação dos superiores antes de rollout completo.
-
-### 🔜 Próximos Passos (Dependem de Aprovação)
-
-1. **Apresentação aos Superiores**
-   - **O quê:** Demonstração do sistema + resultados AllpFit
-   - **Quando:** Aguardando agendamento
-   - **Material:** Este documento + dashboard ao vivo
-   - **Decisão esperada:** Aprovar rollout OpenAI para todos os tenants
-
-2. **Rollout OpenAI (se aprovado)**
-   - Habilitar OpenAI para todos os 10 tenants
-   - Custo adicional: R$ 90/mês (10 tenants × R$ 9)
-   - Tempo: 1 dia (apenas mudar config)
-
-3. **Melhorias Pós-Aprovação**
-   - Onboarding dos 9 clientes restantes
-   - Testes de carga (1.000+ conversas)
-   - Deploy em produção (servidor VPS)
-   - Monitoramento Grafana
-
-4. **Refatoração e Otimização**
-   - Testes automatizados (pytest)
-   - Cache Redis
-   - Otimizações de queries
-   - Documentação de API
-
----
-
-## 📊 DEMONSTRAÇÃO PREPARADA
-
-### Roteiro para Apresentação aos Superiores
-
-#### **1. Contexto (3 minutos)**
-- Problema: Análise manual de conversas é lenta e imprecisa
-- Solução: Sistema SaaS multi-tenant com IA
-- Resultado: 95% de accuracy vs 80% do regex
-
-#### **2. Demo AllpFit (10 minutos)**
-
-**Login:**
-```
-URL: http://localhost:8504
-Email: isaac@allpfit.com.br
-Senha: senha123
-```
-
-**Mostrar:**
-1. **KPIs Principais**
-   - 1.293 conversas totais
-   - 383 leads detectados (51,6%)
-   - 72 visitas agendadas
-
-2. **Gráficos**
-   - Leads por dia (tendência)
-   - Leads por inbox (WhatsApp dominante)
-   - Distribuição de score (maioria score 4-5)
-
-3. **Funil de Conversão**
-   - Conversas → Leads: 51,6%
-   - Leads → Visitas: 18,8%
-   - Visualização clara de cada etapa
-
-4. **Filtros**
-   - Filtrar últimos 7 dias
-   - Filtrar por inbox (WhatsApp)
-   - Ver apenas leads com score 5
-
-5. **Exportação CSV**
-   - Clicar em "Exportar CSV"
-   - Mostrar arquivo baixado
-   - Abrir no Excel (15 colunas formatadas)
-
-6. **Análise Individual**
-   - Mostrar tabela de leads
-   - Expandir detalhes de 2-3 leads
-   - Mostrar análise IA detalhada
-
-#### **3. Comparação Regex vs OpenAI (5 minutos)**
-
-**Mostrar em tela:**
-
-| Métrica | Regex (Antes) | OpenAI (Agora) | Melhoria |
-|---------|---------------|----------------|----------|
-| **Accuracy** | ~80% | ~95% | +15pp |
-| **Taxa de Leads** | 18% | 22% (projetado) | +4pp |
-| **Contexto** | Palavras-chave | Semântico completo | 🚀 |
-| **Custo/mês** | R$ 0 | R$ 9 | Aceitável |
-
-**Exemplos práticos:**
-
-**Caso 1: Falso Negativo (Regex perdeu)**
-```
-Conversa: "Olá, gostaria de saber mais sobre as aulas"
-Regex: NÃO é lead (sem palavras-chave específicas)
-OpenAI: SIM é lead (detectou intenção clara)
-```
-
-**Caso 2: Falso Positivo (Regex errou)**
-```
-Conversa: "Vocês fazem treino para cachorros?"
-Regex: É lead (palavra "treino")
-OpenAI: NÃO é lead (contexto errado)
-```
-
-#### **4. ROI e Custos (3 minutos)**
-
-**Custo Atual (AllpFit apenas):**
-- OpenAI API: R$ 9/mês
-- Servidor: R$ 50/mês
-- Total: R$ 59/mês
-
-**ROI Projetado:**
-- Leads adicionais: +30/mês
-- Conversões: +3/mês
-- Receita: +R$ 1.500/mês
-- **ROI: 2.400%**
-
-**Rollout completo (10 tenants):**
-- Custo: R$ 90 + R$ 50 = R$ 140/mês
-- Receita potencial: R$ 15.000/mês
-- **ROI: 10.600%**
-
-#### **5. Decisão (2 minutos)**
-
-**Opção 1: Aprovar Rollout**
-- Habilitar OpenAI para todos os 10 tenants
-- Custo adicional: +R$ 81/mês
-- Tempo: 1 dia de trabalho
-- Risco: Baixo (sistema já testado)
-
-**Opção 2: Manter Piloto**
-- Continuar apenas AllpFit
-- Avaliar por mais 30 dias
-- Custos mantidos
-
-**Opção 3: Expandir Gradualmente**
-- Habilitar 2-3 tenants por semana
-- Monitorar métricas antes de próximo grupo
-- Rollout completo em 1 mês
-
----
-
-## 📋 CHECKLIST PRÉ-APRESENTAÇÃO
-
-### Ambiente
-- [ ] Dashboard rodando (porta 8504)
-- [ ] Banco de dados ativo
-- [ ] ETL funcionando (última execução success)
-- [ ] Credenciais de login testadas
-- [ ] Dados AllpFit atualizados
-
-### Material
-- [ ] Este documento impresso/PDF
-- [ ] Gráficos de comparação Regex vs OpenAI
-- [ ] Planilha ROI
-- [ ] ADRs principais (ADR-005)
-
-### Demo
-- [ ] Login testado
-- [ ] Filtros funcionando
-- [ ] Exportação CSV testada
-- [ ] Gráficos carregando < 3s
-- [ ] Análise IA visível
-
-### Backup
-- [ ] Screenshots do dashboard
-- [ ] CSV de exemplo exportado
-- [ ] Logs ETL recentes
-- [ ] Queries SQL de métricas
-
----
-
-## 🎯 DECISÃO ESPERADA
-
-### Pergunta Central
-
-**"Devemos implementar análise OpenAI para todos os 10 tenants?"**
-
-### Argumentos A Favor
-
-1. **ROI Excepcional:** 2.400% - 10.600%
-2. **Custo Baixo:** R$ 9/tenant/mês
-3. **Risco Baixo:** Sistema testado, fallback automático
-4. **Impacto Alto:** +15pp accuracy, +4pp leads
-5. **Diferencial Competitivo:** IA vs regex manual
-6. **Escalável:** Fácil adicionar mais tenants
-
-### Riscos Mitigados
-
-1. **Custo descontrolado** → Budget limit por tenant
-2. **API downtime** → Fallback automático para Regex
-3. **Accuracy ruim** → Já validado com 742 conversas
-4. **Performance** → Otimizado (5 workers paralelos)
-
-### Alternativas Se Não Aprovar
-
-1. **Manter Regex** → Sistema continua funcionando (mas menos preciso)
-2. **Piloto estendido** → Mais 30 dias apenas AllpFit
-3. **Rollout gradual** → 2-3 tenants/semana
-
----
-
-## 📞 CONTATOS E PRÓXIMOS PASSOS
-
-### Responsável Técnico
-- **Nome:** Isaac (via Claude Code)
-- **Email:** isaac@allpfit.com.br
-- **Branch Git:** feature/multi-tenant-system
-
-### Após Aprovação
-
-**Dia 1-2: Rollout OpenAI**
-- [ ] Atualizar `tenant_configs.features.use_openai = true` (9 tenants)
-- [ ] Rodar ETL para cada tenant
-- [ ] Monitorar logs e custos
-- [ ] Validar primeiras 100 análises de cada tenant
-
-**Dia 3-5: Onboarding Clientes**
-- [ ] Criar usuários para os 9 tenants restantes
-- [ ] Configurar branding (logo, cores)
-- [ ] Treinamento básico (gravação de tela)
-- [ ] Documentação de usuário
-
-**Dia 6-10: Monitoramento**
-- [ ] Dashboards Grafana (métricas, custos, erros)
-- [ ] Alertas automáticos (email + Slack)
-- [ ] Relatório semanal de métricas
-- [ ] Ajustes finos (prompt, thresholds)
-
-**Semana 2-4: Produção**
-- [ ] Deploy em servidor VPS (DigitalOcean, AWS, Hetzner)
-- [ ] Configurar HTTPS (Nginx + Let's Encrypt)
-- [ ] Backup automático (PostgreSQL)
-- [ ] Testes de carga (1.000+ conversas)
-- [ ] Documentação final
-
----
-
-## 🎉 CONCLUSÃO
-
-### Sistema Atual: PRONTO PARA PRODUÇÃO
-
-✅ **Tecnicamente sólido**
-- Arquitetura multi-tenant robusta
-- ETL automatizado e confiável
-- Análise IA testada e otimizada
-- Dashboard completo e performático
-
-✅ **Financeiramente viável**
-- ROI: 2.400% - 10.600%
-- Custo: R$ 140/mês (10 tenants)
-- Payback: < 1 mês
-
-✅ **Operacionalmente pronto**
-- Documentação completa
-- Scripts de monitoramento
-- Automação systemd
-- Fallback para Regex
-
-### Única Pendência: APROVAÇÃO GERENCIAL
-
-O sistema está **100% funcional** e aguarda apenas a **decisão dos superiores** para:
-
-1. ✅ Aprovar rollout OpenAI para todos os tenants
-2. 🚀 Iniciar onboarding dos 9 clientes restantes
-3. 🔧 Implementar melhorias pós-aprovação (testes, cache, Grafana)
-
----
-
-**Este documento serve como:**
-- 📊 Relatório de status do projeto
-- 🎯 Material de apresentação para superiores
-- 📚 Referência técnica completa
-- 🗺️ Roadmap dos próximos passos
+## 🎯 RESUMO EXECUTIVO (TL;DR)
+
+### Estado Atual (13/Nov/2025)
+
+✅ **Dashboard 100% genérico** aplicável a qualquer segmento
+✅ **5 tenants ativos** com 3.667 conversas totais
+✅ **Funcionalidades avançadas** (filtros, análise inbox, conversas compiladas, stacked charts)
+✅ **Performance excelente** (< 3s carregamento)
+✅ **Código limpo** (campos específicos arquivados, não deletados)
+✅ **Pronto para apresentação** a novos clientes multi-segmento
+
+### Única Pendência
+
+📋 **Sistema futuro de análise customizável** (cada cliente escolhe análise)
+🔨 **Implementação:** Johan + Superior (planejamento em andamento)
+
+### Como Usar Este Documento
+
+**Ao iniciar novo chat com Claude:**
+1. Cite este documento: `@projetos/allpfit-analytics/docs/multi-tenant/ESTADO_ATUAL_PROJETO.md`
+2. Claude terá contexto completo do projeto
+3. Não precisa explicar história ou arquitetura novamente
+
+**Conteúdo completo:**
+- Histórico de todas as fases (1-6)
+- Estado atual de banco de dados, código e funcionalidades
+- Bugs corrigidos e lições aprendidas
+- Próximos passos planejados
+- Referências a documentação relacionada
 
 ---
 
 **Criado por:** Isaac (via Claude Code)
-**Data:** 2025-11-10
-**Versão:** 1.0
-**Próxima Revisão:** Após apresentação aos superiores
+**Data:** 2025-11-13
+**Versão:** 2.0 (Pós-Dashboard Genérico)
+**Próxima Revisão:** Após onboarding de novos clientes multi-segmento
 
-**Branch:** feature/multi-tenant-system
-**Último Commit:** `7c25f28` - "feat(openai): otimizações críticas de performance e estabilidade"
+**Branch:** feature/dashboard-generico
+**Último Commit:** `44f739d` - "feat: Toggle Por Inbox + Fix filtro global + Stacked bar chart"
+**Commits Principais (Fases 1-6):**
+- `9bde18a` - Dashboard Genérico (Fase 1-3)
+- `bd86fe2` - Filtros Rápidos (Fase 4)
+- `e2eee98` - Análise por Inbox (Fase 5)
+- `e528ef9` + `fc2ee72` - Conversas Compiladas (Fase 6)
+- `76dd3af` - Simplificação UX (granularidade automática)
+- `44f739d` - Toggle Por Inbox + Fix filtro global
+
+---
+
+## 📞 COMANDOS RÁPIDOS DE REFERÊNCIA
+
+### Acessar Dashboard
+```bash
+URL: http://localhost:8504
+Email: admin@geniai.com.br
+Senha: senha123
+```
+
+### Conectar ao Banco
+```bash
+PGPASSWORD='vlVMVM6UNz2yYSBlzodPjQvZh' \
+psql -U johan_geniai -d geniai_analytics -h localhost
+```
+
+### Ver Estatísticas
+```sql
+-- Total de conversas por tenant
+SELECT tenant_id, COUNT(*) as conversas
+FROM conversations_analytics
+GROUP BY tenant_id
+ORDER BY tenant_id;
+
+-- Usuários ativos
+SELECT id, email, role, tenant_id, is_active
+FROM users
+WHERE deleted_at IS NULL;
+
+-- Tenants ativos
+SELECT id, name, status, plan
+FROM tenants
+WHERE deleted_at IS NULL;
+```
+
+### Ver Processo Rodando
+```bash
+ps aux | grep streamlit | grep 8504
+```
+
+### Ver Últimos Commits
+```bash
+git log --oneline -10
+```
+
+---
+
+**FIM DO DOCUMENTO**
