@@ -1528,17 +1528,15 @@ def render_leads_table(df, df_original, tenant_name, date_start, date_end):
         return
 
     # Selecionar colunas genéricas multi-tenant (incluindo conversa_compilada) [FASE 6]
+    # FASE 7: Remover colunas LEAD, CRM, VISITA, SCORE e CLASSIFICAÇÃO IA (2025-11-13)
+    # FASE 7.1: Adicionar Primeira/Última Conversa, remover Data (2025-11-13)
     display_df = leads_df[[
         'conversation_display_id',
         'contact_name',
         'contact_phone',
         'inbox_name',
-        'conversation_date',
-        'is_lead',
-        'visit_scheduled',
-        'crm_converted',
-        'ai_probability_label',
-        'ai_probability_score',
+        'primeiro_contato',  # [FASE 7.1 - NOVO]
+        'ultimo_contato',    # [FASE 7.1 - NOVO]
         'nome_mapeado_bot',
         'conversa_compilada'  # [FASE 6 - NOVO]
     ]].copy()
@@ -1552,12 +1550,8 @@ def render_leads_table(df, df_original, tenant_name, date_start, date_end):
         'contact_name',
         'contact_phone',
         'inbox_name',
-        'conversation_date',
-        'is_lead',
-        'visit_scheduled',
-        'crm_converted',
-        'ai_probability_label',
-        'ai_probability_score',
+        'primeiro_contato',
+        'ultimo_contato',
         'nome_mapeado_bot',
         'preview_conversa'
     ]].copy()
@@ -1567,23 +1561,14 @@ def render_leads_table(df, df_original, tenant_name, date_start, date_end):
         'Nome',
         'Telefone',
         'Inbox',
-        'Data',
-        'Lead',
-        'Visita',
-        'CRM',
-        'Classificação IA',
-        'Score IA',
+        'Primeira Conversa',  # [FASE 7.1 - NOVO]
+        'Última Conversa',    # [FASE 7.1 - NOVO]
         'Nome Mapeado',
         'Prévia Conversa'  # [FASE 6 - NOVO]
     ]
 
-    # Formatar colunas booleanas
-    display_df_view['Lead'] = display_df_view['Lead'].apply(lambda x: '✅' if x else '❌')
-    display_df_view['Visita'] = display_df_view['Visita'].apply(lambda x: '✅' if x else '❌')
-    display_df_view['CRM'] = display_df_view['CRM'].apply(lambda x: '✅' if x else '❌')
-
-    # Formatar score
-    display_df_view['Score IA'] = display_df_view['Score IA'].apply(lambda x: f"{x:.1f}%" if pd.notna(x) else "-")
+    # REMOVIDO (FASE 7): Formatação de colunas booleanas (Lead, Visita, CRM)
+    # REMOVIDO (FASE 7): Formatação de Score IA
 
     # Exibir tabela
     st.dataframe(display_df_view, use_container_width=True, hide_index=True)

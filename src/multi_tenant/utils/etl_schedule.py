@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 def get_next_etl_time(last_sync: datetime = None) -> dict:
     """
     Calcula quando será a próxima execução do ETL baseado no schedule fixo do systemd
-    (a cada 2 horas: 00:00, 02:00, 04:00, 06:00, 08:00, 10:00, 12:00, 14:00, 16:00, 18:00, 20:00, 22:00)
+    (a cada 30 minutos: XX:00 e XX:30 de cada hora)
 
     Args:
         last_sync: Timestamp da última sincronização (UTC). Não usado, mas mantido para compatibilidade
@@ -23,23 +23,26 @@ def get_next_etl_time(last_sync: datetime = None) -> dict:
             - formatted_time: string formatada "HH:MM"
             - is_overdue: bool se já passou da hora
     """
-    ETL_INTERVAL_HOURS = 2
+    ETL_INTERVAL_MINUTES = 30
 
     now_utc = datetime.utcnow()
 
-    # Calcular próxima execução baseado no schedule fixo (múltiplos de 2h)
-    # Horários: 00:00, 02:00, 04:00, 06:00, 08:00, 10:00, 12:00, 14:00, 16:00, 18:00, 20:00, 22:00
+    # Calcular próxima execução baseado no schedule fixo (a cada 30 minutos)
+    # Horários: XX:00, XX:30 (de cada hora)
     current_hour = now_utc.hour
     current_minute = now_utc.minute
 
-    # Próximo horário múltiplo de 2
-    next_hour = ((current_hour // ETL_INTERVAL_HOURS) + 1) * ETL_INTERVAL_HOURS
-
-    # Se passou das 22:00, próximo é 00:00 do dia seguinte
-    if next_hour >= 24:
-        next_etl_utc = (now_utc + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    # Determinar próximo horário (00 ou 30)
+    if current_minute < 30:
+        # Próximo é XX:30
+        next_etl_utc = now_utc.replace(hour=current_hour, minute=30, second=0, microsecond=0)
     else:
-        next_etl_utc = now_utc.replace(hour=next_hour, minute=0, second=0, microsecond=0)
+        # Próximo é (XX+1):00
+        if current_hour == 23:
+            # Próximo dia, 00:00
+            next_etl_utc = (now_utc + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        else:
+            next_etl_utc = now_utc.replace(hour=current_hour + 1, minute=0, second=0, microsecond=0)
 
     # Calcular tempo restante
     time_until = next_etl_utc - now_utc

@@ -420,9 +420,16 @@ Dashboard Streamlit (RLS por tenant)
 - Última execução: 13/Nov 08:03 (5 tenants, 0 novos registros)
 - Total de execuções: 307 registros em `etl_control`
 
+**Agendamento Automático:**
+- ✅ Systemd timer ATIVO (configurado em 13/Nov)
+- ⏰ Intervalo: **A cada 30 minutos** (XX:00 e XX:30 de cada hora)
+- 🔄 Frequência: 48 execuções/dia (antes: 12x/dia a cada 2 horas)
+- 📊 Latência máxima de dados: 30 minutos (antes: 2 horas)
+- ✅ Extração incremental com watermark (apenas dados novos)
+
 **Status Atual:**
 - ✅ Pipeline funcional
-- ⏸️ Systemd timer NÃO configurado (execução manual quando necessário)
+- ✅ Timer ativo e testado
 - ✅ 0% error rate (100% confiável)
 
 ---
