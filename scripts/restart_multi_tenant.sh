@@ -11,7 +11,7 @@ echo "🔄 Reiniciando Dashboard Multi-Tenant (Porta 8504)..."
 echo ""
 
 # Diretório do projeto
-PROJECT_DIR="/home/tester/projetos/allpfit-analytics"
+PROJECT_DIR="/home/tester/projetos/geniai-analytics"
 cd "$PROJECT_DIR" || exit 1
 
 # ============================================================================
