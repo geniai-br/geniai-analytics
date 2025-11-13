@@ -35,7 +35,7 @@
 ┌─────────────────────────────────────────────────────────────┐
 │ ANTES (Single-Tenant)                                        │
 ├─────────────────────────────────────────────────────────────┤
-│ Database: allpfit                                            │
+│ Database: cliente_analytics (exemplo: um cliente apenas)    │
 │ ├── conversas_analytics (sem tenant_id)                     │
 │ ├── conversas_analytics_ai                                  │
 │ ├── etl_control                                             │
@@ -586,7 +586,7 @@ df = pd.read_sql("SELECT * FROM conversations_analytics", conn)
 1. ✅ **Criar banco `geniai_analytics`** vazio
 2. ✅ **Executar DDL** (CREATE TABLE, índices, RLS)
 3. ✅ **Seed dados** iniciais (tenants, users)
-4. ✅ **Migrar dados** do banco `allpfit` → `geniai_analytics`
+4. ✅ **Migrar dados** do banco antigo → `geniai_analytics`
 5. ✅ **Validar** integridade e isolamento
 6. ✅ **Atualizar aplicação** para usar novo banco
 7. ✅ **Backup** banco antigo e desativar
@@ -596,7 +596,7 @@ df = pd.read_sql("SELECT * FROM conversations_analytics", conn)
 #### 1. Criar banco e schema
 
 ```bash
-# sql/multi_tenant/01_create_database.sql
+# sql/01_create_database.sql
 CREATE DATABASE geniai_analytics
 WITH
     ENCODING = 'UTF8'
@@ -611,48 +611,48 @@ psql -U postgres -c "CREATE DATABASE geniai_analytics;"
 #### 2. Criar tabelas
 
 ```bash
-psql -U postgres -d geniai_analytics -f sql/multi_tenant/02_create_schema.sql
+psql -U postgres -d geniai_analytics -f sql/02_create_schema.sql
 ```
 
 #### 3. Seed dados iniciais
 
 ```bash
-psql -U postgres -d geniai_analytics -f sql/multi_tenant/03_seed_data.sql
+psql -U postgres -d geniai_analytics -f sql/03_seed_data.sql
 ```
 
-#### 4. Migrar dados AllpFit
+#### 4. Migrar dados de cliente existente
 
 ```sql
--- sql/multi_tenant/04_migrate_allpfit.sql
+-- sql/04_migrate_client_data.sql
 
 -- Conectar aos dois bancos
 \c geniai_analytics
 
--- Usar dblink para copiar dados
+-- Usar dblink para copiar dados do banco antigo
 CREATE EXTENSION IF NOT EXISTS dblink;
 
--- Copiar conversas
+-- Copiar conversas do cliente (exemplo: tenant_id = 1)
 INSERT INTO conversations_analytics
 SELECT
     *,
-    1 AS tenant_id,  -- AllpFit é tenant_id = 1
+    1 AS tenant_id,  -- ID do tenant no novo sistema
     inbox_id
 FROM dblink(
-    'dbname=allpfit user=isaac',
+    'dbname=cliente_db user=postgres',  -- Banco antigo do cliente
     'SELECT * FROM conversas_analytics'
 ) AS t(...);  -- Listar todas as colunas
 
--- Copiar AI analysis
+-- Copiar análises de IA
 INSERT INTO conversas_analytics_ai
 SELECT *, 1 AS tenant_id
-FROM dblink('dbname=allpfit', 'SELECT * FROM conversas_analytics_ai') AS t(...);
+FROM dblink('dbname=cliente_db', 'SELECT * FROM conversas_analytics_ai') AS t(...);
 
--- Copiar ETL control
+-- Copiar controle ETL
 INSERT INTO etl_control
 SELECT *, 1 AS tenant_id, NULL AS inbox_ids
-FROM dblink('dbname=allpfit', 'SELECT * FROM etl_control') AS t(...);
+FROM dblink('dbname=cliente_db', 'SELECT * FROM etl_control') AS t(...);
 
--- Validar
+-- Validar contagens
 SELECT
     'conversations' AS table_name,
     tenant_id,
@@ -670,30 +670,30 @@ GROUP BY tenant_id;
 #### 5. Habilitar RLS
 
 ```bash
-psql -U postgres -d geniai_analytics -f sql/multi_tenant/05_row_level_security.sql
+psql -U postgres -d geniai_analytics -f sql/05_row_level_security.sql
 ```
 
 ### Validação Pós-Migração
 
 ```sql
--- 1. Verificar contagens
-SELECT 'allpfit DB' AS source, COUNT(*) FROM allpfit.conversas_analytics
+-- 1. Verificar contagens entre banco antigo e novo
+SELECT 'banco_antigo' AS source, COUNT(*) FROM banco_antigo.conversas_analytics
 UNION ALL
-SELECT 'geniai_analytics DB', COUNT(*) FROM geniai_analytics.conversations_analytics;
+SELECT 'geniai_analytics', COUNT(*) FROM geniai_analytics.conversations_analytics;
 
 -- 2. Verificar tenant_id
 SELECT tenant_id, COUNT(*) FROM conversations_analytics GROUP BY tenant_id;
--- Deve mostrar: tenant_id=1, COUNT=N
+-- Deve mostrar: tenant_id=1, COUNT=N (número igual ao banco antigo)
 
--- 3. Testar RLS
+-- 3. Testar RLS para cliente
 SET ROLE authenticated_users;
 SET app.current_tenant_id = 1;
-SELECT COUNT(*) FROM conversations_analytics;  -- Deve retornar todas
+SELECT COUNT(*) FROM conversations_analytics;  -- Deve retornar todas do tenant 1
 
 SET app.current_tenant_id = 999;
 SELECT COUNT(*) FROM conversations_analytics;  -- Deve retornar 0 (não existe tenant 999)
 
--- 4. Testar admin
+-- 4. Testar admin (acesso irrestrito)
 SET ROLE admin_users;
 SELECT COUNT(*) FROM conversations_analytics;  -- Deve retornar todas independente de tenant_id
 ```
@@ -841,7 +841,7 @@ def test_tenant_isolation(db):
 - [ ] Documentar políticas
 
 ### Fase 3: Migração
-- [ ] Backup completo banco `allpfit`
+- [ ] Backup completo banco antigo do cliente
 - [ ] Seed dados iniciais (tenants, users)
 - [ ] Criar inbox_tenant_mapping
 - [ ] Migrar conversations_analytics
@@ -857,5 +857,6 @@ def test_tenant_isolation(db):
 
 ---
 
-**Próximo arquivo:** [02_AUTENTICACAO.md](02_AUTENTICACAO.md)
-**Voltar para:** [00_CRONOGRAMA_MASTER.md](00_CRONOGRAMA_MASTER.md)
+**Documentação relacionada:**
+- [VISAO_GERAL_PROJETO.md](VISAO_GERAL_PROJETO.md) - Visão geral do projeto
+- [README.md](README.md) - Índice da documentação pública
