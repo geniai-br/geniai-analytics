@@ -50,6 +50,7 @@ def load_conversations(tenant_id, date_start=None, date_end=None, inbox_filter=N
             display_id as conversation_display_id,
             inbox_id,
             inbox_name,
+            contact_id,  -- [FASE 7.2 - NOVO: Para contar leads únicos]
             contact_name,
             contact_phone,
             contact_email,
@@ -113,6 +114,36 @@ def load_conversations(tenant_id, date_start=None, date_end=None, inbox_filter=N
         df = pd.read_sql(text(query), conn, params=params)
 
     return df
+
+
+def get_total_leads_count(tenant_id):
+    """
+    Retorna contagem TOTAL de leads únicos do tenant (SEM filtro de data)
+    Para exibir no card de métricas
+
+    DEFINIÇÃO DE LEAD: Contatos com is_lead=TRUE (probabilidade IA >= 2)
+    Não inclui contatos que apenas entraram em contato mas não foram qualificados pela IA
+
+    Args:
+        tenant_id: ID do tenant
+
+    Returns:
+        int: Número de leads únicos (contatos com is_lead=TRUE)
+    """
+    engine = get_database_engine()
+
+    # IMPORTANTE: Filtro explícito de tenant_id necessário (RLS não está filtrando sozinho)
+    query = text("""
+        SELECT COUNT(DISTINCT contact_id) as total_leads
+        FROM conversations_analytics
+        WHERE tenant_id = :tenant_id
+          AND is_lead = TRUE
+          AND contact_id IS NOT NULL
+    """)
+
+    with engine.connect() as conn:
+        result = conn.execute(query, {'tenant_id': tenant_id}).fetchone()
+        return result[0] if result else 0
 
 
 def get_tenant_info(tenant_id):
@@ -225,13 +256,22 @@ def calculate_metrics(df):
     # Contar contatos únicos (para métrica de engagement)
     unique_contacts = df['contact_name'].nunique() if 'contact_name' in df.columns else total
 
+    # [FASE 7.2 - CORREÇÃO: Contar CONTATOS ÚNICOS como leads, não conversas]
+    # Problema: estava contando conversas (394), não pessoas únicas (1306)
+    # Solução: usar contact_id único para contar leads
+    if 'contact_id' in df.columns:
+        leads_df = df[df['is_lead'] == True]
+        unique_leads = leads_df['contact_id'].nunique() if not leads_df.empty else 0
+    else:
+        unique_leads = len(df[df['is_lead'] == True])  # Fallback
+
     # Métricas Existentes
     metrics = {
         'total_contacts': total,
         'unique_contacts': unique_contacts,  # NOVO: contatos únicos
         'ai_conversations': len(df[df['has_human_intervention'] == False]) if 'has_human_intervention' in df.columns else len(df[df['bot_messages'] > 0]),
         'human_conversations': len(df[df['has_human_intervention'] == True]) if 'has_human_intervention' in df.columns else 0,
-        'leads': len(df[df['is_lead'] == True]),
+        'leads': unique_leads,  # [FASE 7.2 - ALTERADO: contatos únicos, não conversas]
         'visits_scheduled': len(df[df['visit_scheduled'] == True]),
         'crm_converted': len(df[df['crm_converted'] == True]),
     }
@@ -517,12 +557,13 @@ def render_header(session, tenant_name, show_back=False):
     return action
 
 
-def render_kpis(metrics):
+def render_kpis(metrics, total_leads_no_filter=None):
     """
     Renderiza KPIs principais (cards de métricas)
 
     Args:
-        metrics: Dict com métricas calculadas
+        metrics: Dict com métricas calculadas (do período filtrado)
+        total_leads_no_filter: Total de leads únicos SEM filtro de data (opcional)
     """
     # Linha 1: Métricas principais
     col1, col2, col3, col4, col5 = st.columns(5)
@@ -531,7 +572,11 @@ def render_kpis(metrics):
         st.metric("Total Contatos", format_number(metrics['total_contacts']))
 
     with col2:
-        st.metric("Leads", format_number(metrics['leads']))
+        # [FASE 7.2 - CORREÇÃO FINAL: Mostrar leads TOTAIS sem filtro de data]
+        # Se total_leads_no_filter for fornecido, usar ele (ignora filtro de data)
+        # Caso contrário, usar do dataframe filtrado
+        leads_count = total_leads_no_filter if total_leads_no_filter is not None else metrics['leads']
+        st.metric("Leads", format_number(leads_count))
 
     with col3:
         st.metric("Visitas Agendadas", format_number(metrics['visits_scheduled']))
@@ -935,85 +980,94 @@ def render_period_distribution_chart(period_dist):
 # CONVERSA COMPILADA [FASE 6]
 # ============================================================================
 
-def format_message_preview(message_compiled, max_messages=3):
+def format_conversation_readable(message_compiled_json, contact_name="Lead"):
     """
-    Formata prévia da conversa compilada (primeiras N mensagens)
+    Formata a conversa compilada (JSON) em formato legível de chat
+    [FASE 7.2 - ADAPTADO do single-tenant para multi-tenant]
 
     Args:
-        message_compiled: JSONB com mensagens (lista de dicts ou None)
-        max_messages: Número máximo de mensagens a exibir na prévia
+        message_compiled_json: String JSON ou objeto Python com as mensagens
+        contact_name: Nome do contato (padrão: "Lead")
 
     Returns:
-        str: Texto formatado para exibição na tabela
+        String formatada como chat legível
     """
     import json
 
-    # CORREÇÃO: Verificar tipo ANTES de usar pd.isna() para evitar erro com arrays
-    # JSONB do PostgreSQL vem como lista/dict Python (não string!)
+    if not message_compiled_json:
+        return "Conversa vazia"
 
-    # Caso 1: JSONB já parseado (lista ou dict)
-    if isinstance(message_compiled, (list, dict)):
-        messages = message_compiled
-
-        # Verificar se lista está vazia
-        if isinstance(messages, list) and len(messages) == 0:
-            return "N/A"
-
-    # Caso 2: None ou NaN (somente DEPOIS de verificar se não é lista/dict)
-    elif message_compiled is None or pd.isna(message_compiled):
-        return "N/A"
-
-    # Caso 3: String JSON (fallback para compatibilidade)
-    elif isinstance(message_compiled, str):
+    # Se for string JSON, converter para objeto Python
+    if isinstance(message_compiled_json, str):
         try:
-            messages = json.loads(message_compiled)
-            if isinstance(messages, list) and len(messages) == 0:
-                return "N/A"
-        except Exception as e:
-            return f"Erro: {str(e)}"
-
-    # Caso 4: Tipo desconhecido
+            messages = json.loads(message_compiled_json)
+        except:
+            return message_compiled_json
     else:
-        return "N/A"
+        messages = message_compiled_json
 
-    try:
+    if not messages or not isinstance(messages, list):
+        return "Conversa vazia"
 
-        # Pegar primeiras N mensagens
-        preview_messages = messages[:max_messages]
+    formatted_lines = []
 
-        # Formatar cada mensagem
-        formatted = []
-        for msg in preview_messages:
-            sender = msg.get('sender', '?')
-            text = msg.get('text', '')
+    for msg in messages:
+        # Pular mensagens do sistema (message_type 2 ou 3)
+        if msg.get('message_type') in [2, 3]:
+            continue
 
-            # Emoji por tipo de sender
-            if sender == 'Contact':
-                emoji = '👤'
-            elif sender == 'AgentBot':
-                emoji = '🤖'
-            elif sender == 'User':
-                emoji = '👨‍💼'
+        # Pular mensagens privadas
+        if msg.get('private', False):
+            continue
+
+        text = msg.get('text', '')
+        if text is None:
+            text = ''
+        text = text.strip()
+        if not text:
+            continue
+
+        sender = msg.get('sender', 'Unknown')
+        sender_name_from_msg = msg.get('sender_name', '')  # Nome do atendente se houver
+        sent_at = msg.get('sent_at')
+
+        # Determinar quem enviou (GENÉRICO para multi-tenant)
+        if sender == 'Contact':
+            sender_name = f"Lead ({contact_name})"
+        elif sender == 'AgentBot':
+            sender_name = "Bot (IA)"
+        elif sender == 'User':
+            # Atendente humano - mostrar nome se disponível
+            if sender_name_from_msg:
+                sender_name = f"Atendente ({sender_name_from_msg})"
             else:
-                emoji = '📩'
+                sender_name = "Atendente"
+        elif sender == 'Agent':
+            sender_name = "Atendente"
+        elif sender is None or sender == 'Bot':
+            sender_name = "Bot (IA)"
+        else:
+            sender_name = sender
 
-            # Limitar texto a 50 caracteres
-            if len(text) > 50:
-                text = text[:47] + "..."
+        # Formatar data/hora
+        if sent_at:
+            try:
+                # Parse ISO format
+                dt = datetime.fromisoformat(sent_at.replace('Z', '+00:00'))
+                # Converter UTC para SP (UTC-3)
+                dt_sp = dt - timedelta(hours=3)
+                date_str = dt_sp.strftime('%d/%m/%Y %H:%M')
+            except:
+                date_str = sent_at
+        else:
+            date_str = "Data desconhecida"
 
-            formatted.append(f"{emoji} {text}")
+        # Adicionar linha formatada
+        formatted_lines.append(f"{sender_name}: {text}")
+        formatted_lines.append(f"Enviado: {date_str}")
+        formatted_lines.append("")  # Linha em branco entre mensagens
 
-        # Juntar com quebra de linha
-        result = "\n".join(formatted)
-
-        # Indicar se há mais mensagens
-        if len(messages) > max_messages:
-            result += f"\n... (+{len(messages) - max_messages} mensagens)"
-
-        return result
-
-    except Exception as e:
-        return f"Erro: {str(e)}"
+    return "\n".join(formatted_lines) if formatted_lines else "Conversa vazia"
 
 
 def render_conversation_modal(conversation_id, message_compiled, contact_name):
@@ -1527,10 +1581,73 @@ def render_leads_table(df, df_original, tenant_name, date_start, date_end):
         st.info("ℹ️ Nenhum lead encontrado no período selecionado")
         return
 
+    # === PAGINAÇÃO === [FASE 7.2 - NOVO]
+    # Inicializar estado de paginação
+    if 'leads_page' not in st.session_state:
+        st.session_state.leads_page = 1
+
+    # Configuração de paginação
+    LEADS_PER_PAGE = 50
+    total_leads = len(leads_df)
+    total_pages = (total_leads + LEADS_PER_PAGE - 1) // LEADS_PER_PAGE  # Arredonda para cima
+
+    # Garantir que a página atual está dentro dos limites
+    if st.session_state.leads_page > total_pages and total_pages > 0:
+        st.session_state.leads_page = total_pages
+    if st.session_state.leads_page < 1:
+        st.session_state.leads_page = 1
+
+    # Calcular offset
+    offset = (st.session_state.leads_page - 1) * LEADS_PER_PAGE
+
+    # Paginar os dados
+    leads_paginated = leads_df.iloc[offset:offset + LEADS_PER_PAGE].copy()
+
+    # === HEADER COM PAGINAÇÃO ===
+    col_info, col_nav = st.columns([3, 2])
+
+    with col_info:
+        start_record = offset + 1
+        end_record = min(offset + LEADS_PER_PAGE, total_leads)
+        st.info(f"📊 Mostrando **{start_record}-{end_record}** de **{total_leads}** leads | Página **{st.session_state.leads_page}** de **{total_pages}**")
+
+    with col_nav:
+        # Controles de navegação
+        col_prev, col_page_input, col_next = st.columns([1, 2, 1])
+
+        with col_prev:
+            if st.button("◀️ Anterior", disabled=(st.session_state.leads_page == 1), use_container_width=True):
+                st.session_state.leads_page -= 1
+                st.rerun()
+
+        with col_page_input:
+            # Input direto de página
+            page_input = st.number_input(
+                "Ir para página",
+                min_value=1,
+                max_value=total_pages,
+                value=st.session_state.leads_page,
+                step=1,
+                key="page_input",
+                label_visibility="collapsed"
+            )
+            if page_input != st.session_state.leads_page:
+                st.session_state.leads_page = page_input
+                st.rerun()
+
+        with col_next:
+            if st.button("Próximo ▶️", disabled=(st.session_state.leads_page >= total_pages), use_container_width=True):
+                st.session_state.leads_page += 1
+                st.rerun()
+
+    st.divider()
+
+    # === PREPARAR DADOS DA TABELA === [FASE 7.2]
     # Selecionar colunas genéricas multi-tenant (incluindo conversa_compilada) [FASE 6]
     # FASE 7: Remover colunas LEAD, CRM, VISITA, SCORE e CLASSIFICAÇÃO IA (2025-11-13)
     # FASE 7.1: Adicionar Primeira/Última Conversa, remover Data (2025-11-13)
-    display_df = leads_df[[
+    # FASE 7.2: Adicionar Conversa Completa formatada, remover prévia e expanders (2025-11-13)
+    display_df = leads_paginated[[
         'conversation_display_id',
         'contact_name',
         'contact_phone',
@@ -1541,10 +1658,13 @@ def render_leads_table(df, df_original, tenant_name, date_start, date_end):
         'conversa_compilada'  # [FASE 6 - NOVO]
     ]].copy()
 
-    # Adicionar coluna de prévia da conversa [FASE 6]
-    display_df['preview_conversa'] = display_df['conversa_compilada'].apply(lambda x: format_message_preview(x, max_messages=3))
+    # Formatar conversa completa (igual single-tenant) [FASE 7.2 - NOVO]
+    display_df['conversa_formatada'] = display_df.apply(
+        lambda row: format_conversation_readable(row['conversa_compilada'], row['contact_name'] or "Lead"),
+        axis=1
+    )
 
-    # Renomear colunas
+    # Selecionar colunas para visualização
     display_df_view = display_df[[
         'conversation_display_id',
         'contact_name',
@@ -1553,7 +1673,7 @@ def render_leads_table(df, df_original, tenant_name, date_start, date_end):
         'primeiro_contato',
         'ultimo_contato',
         'nome_mapeado_bot',
-        'preview_conversa'
+        'conversa_formatada'  # [FASE 7.2 - NOVO: Conversa completa substituindo prévia]
     ]].copy()
 
     display_df_view.columns = [
@@ -1564,36 +1684,27 @@ def render_leads_table(df, df_original, tenant_name, date_start, date_end):
         'Primeira Conversa',  # [FASE 7.1 - NOVO]
         'Última Conversa',    # [FASE 7.1 - NOVO]
         'Nome Mapeado',
-        'Prévia Conversa'  # [FASE 6 - NOVO]
+        'Conversa Completa'  # [FASE 7.2 - NOVO: Coluna completa na tabela]
     ]
 
     # REMOVIDO (FASE 7): Formatação de colunas booleanas (Lead, Visita, CRM)
     # REMOVIDO (FASE 7): Formatação de Score IA
+    # REMOVIDO (FASE 7.2): Expanders de conversas completas (agora na tabela)
 
-    # Exibir tabela
-    st.dataframe(display_df_view, use_container_width=True, hide_index=True)
-
-    st.divider()
-
-    # === CONVERSAS COMPLETAS (EXPANDERS) === [FASE 6 - NOVO]
-    st.markdown("#### 💬 Ver Conversas Completas")
-
-    # Limitar a 10 conversas para não sobrecarregar a UI
-    max_conversations_to_show = min(10, len(leads_df))
-
-    if max_conversations_to_show > 0:
-        st.caption(f"📊 Exibindo até {max_conversations_to_show} conversas (primeiros {max_conversations_to_show} leads da tabela)")
-
-        # Iterar sobre os primeiros N leads
-        for idx, row in leads_df.head(max_conversations_to_show).iterrows():
-            conversation_id = row['conversation_display_id']
-            contact_name = row['contact_name'] or "Sem nome"
-            message_compiled = row['conversa_compilada']
-
-            # Renderizar modal/expander para cada conversa
-            render_conversation_modal(conversation_id, message_compiled, contact_name)
-    else:
-        st.info("ℹ️ Nenhuma conversa disponível para exibição")
+    # Exibir tabela com conversa completa
+    st.dataframe(
+        display_df_view,
+        use_container_width=True,
+        hide_index=True,
+        height=600,  # Altura maior para acomodar conversas completas
+        column_config={
+            "Conversa Completa": st.column_config.TextColumn(
+                "Conversa Completa",
+                width="large",
+                help="Conversa completa formatada como chat"
+            )
+        }
+    )
 
     # REMOVIDO: Modal de Análise IA Detalhada (específico AllpFit)
     # Ver: src/multi_tenant/dashboards/_archived/allpfit_specific_functions.py → render_allpfit_ai_analysis_modal()
@@ -1689,7 +1800,7 @@ def show_client_dashboard(session, tenant_id=None):
     with col2:
         date_start = st.date_input(
             "Início",
-            value=datetime.now() - timedelta(days=30),
+            value=datetime.now() - timedelta(days=365),  # [FASE 7.2 - ALTERADO: 1 ano padrão para ver mais dados]
             key="date_start"
         )
 
@@ -1783,8 +1894,14 @@ def show_client_dashboard(session, tenant_id=None):
     df = df_filtered
 
     # === MÉTRICAS ===
+    # [FASE 7.2 - CORREÇÃO FINAL: Buscar total de leads SEM filtro de data]
+    total_leads_all_time = get_total_leads_count(display_tenant_id)
+
+    # Calcular métricas do período filtrado
     metrics = calculate_metrics(df)
-    render_kpis(metrics)
+
+    # Renderizar KPIs com total de leads SEM filtro
+    render_kpis(metrics, total_leads_no_filter=total_leads_all_time)
 
     st.divider()
 

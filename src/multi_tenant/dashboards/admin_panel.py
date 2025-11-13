@@ -45,7 +45,7 @@ def get_active_tenants():
             t.created_at,
             (SELECT COUNT(*) FROM users WHERE tenant_id = t.id AND deleted_at IS NULL) AS user_count,
             (SELECT COUNT(*) FROM conversations_analytics WHERE tenant_id = t.id) AS conversation_count,
-            (SELECT COUNT(DISTINCT contact_id) FROM conversations_analytics WHERE tenant_id = t.id AND contact_id IS NOT NULL) AS lead_count,
+            (SELECT COUNT(DISTINCT contact_id) FROM conversations_analytics WHERE tenant_id = t.id AND is_lead = TRUE AND contact_id IS NOT NULL) AS lead_count,
             (SELECT MAX(etl_updated_at) FROM conversations_analytics WHERE tenant_id = t.id) AS last_sync
         FROM tenants t
         WHERE t.deleted_at IS NULL
