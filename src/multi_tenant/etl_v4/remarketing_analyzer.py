@@ -21,13 +21,23 @@ Data: 2025-11-14
 """
 
 import os
+import json
 import logging
+from decimal import Decimal
 from typing import Dict, Any, Optional
 from datetime import datetime
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from .analyzers.openai_lead_remarketing_analyzer import OpenAILeadRemarketingAnalyzer
+
+
+class DecimalEncoder(json.JSONEncoder):
+    """Custom JSON encoder para lidar com Decimal."""
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return float(obj)
+        return super().default(obj)
 
 # Configurar logging
 logging.basicConfig(
@@ -151,7 +161,9 @@ def analyze_inactive_leads(
     logger.info("FASE 4: ANALYZE INACTIVE LEADS (24h+)")
     logger.info("-" * 80)
 
-    # Buscar leads inativos 24h+ sem análise
+    # Buscar leads inativos 24h+ sem análise de remarketing
+    # IMPORTANTE: Busca por tipo_conversa IS NULL (campo novo de remarketing)
+    # ao invés de analise_ia IS NULL (campo antigo pode estar preenchido)
     query = text("""
         SELECT
             conversation_id,
@@ -166,7 +178,7 @@ def analyze_inactive_leads(
         WHERE
             tenant_id = :tenant_id
             AND is_lead = true
-            AND analise_ia IS NULL
+            AND tipo_conversa IS NULL                            -- Campo NOVO de remarketing
             AND mc_last_message_at < NOW() - INTERVAL '24 hours'
             AND contact_messages_count >= 3
             AND message_compiled IS NOT NULL
@@ -287,13 +299,11 @@ def save_analysis_to_db(
             analise_ia = :analise_ia,
             sugestao_disparo = :sugestao_disparo,
             score_prioridade = :score_prioridade,
-            dados_extraidos_ia = :dados_extraidos_ia::jsonb,
-            metadados_analise_ia = :metadados_analise_ia::jsonb,
+            dados_extraidos_ia = cast(:dados_extraidos_ia as jsonb),
+            metadados_analise_ia = cast(:metadados_analise_ia as jsonb),
             analisado_em = :analisado_em
         WHERE conversation_id = :conversation_id
     """)
-
-    import json
 
     with local_engine.connect() as conn:
         conn.execute(query, {
@@ -302,8 +312,8 @@ def save_analysis_to_db(
             'analise_ia': resultado['analise_ia'],
             'sugestao_disparo': resultado['sugestao_disparo'],
             'score_prioridade': resultado['score_prioridade'],
-            'dados_extraidos_ia': json.dumps(resultado['dados_extraidos_ia']),
-            'metadados_analise_ia': json.dumps(resultado['metadados_analise_ia']),
+            'dados_extraidos_ia': json.dumps(resultado['dados_extraidos_ia'], cls=DecimalEncoder),
+            'metadados_analise_ia': json.dumps(resultado['metadados_analise_ia'], cls=DecimalEncoder),
             'analisado_em': resultado['analisado_em']
         })
         conn.commit()

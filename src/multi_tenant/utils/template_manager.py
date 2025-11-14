@@ -188,18 +188,23 @@ Estou à disposição para tirar qualquer dúvida! 😊
         # Obter template
         template = self.get_template(tipo_remarketing)
 
-        # Preparar variáveis
+        # Preparar variáveis (campos genéricos atualizados)
         nome = contact_name or 'você'
-        objetivo = dados_extraidos.get('objetivo', 'nossos serviços')
-        interesse = dados_extraidos.get('interesse_especifico', objetivo)
+        interesse_mencionado = dados_extraidos.get('interesse_mencionado', 'nossos serviços')
+        # Fallback: usar 'objetivo' antigo se 'interesse_mencionado' não existir (compatibilidade)
+        if 'objetivo' in dados_extraidos and interesse_mencionado == 'nossos serviços':
+            interesse_mencionado = dados_extraidos.get('objetivo', 'nossos serviços')
+
+        # Usar interesse_mencionado para ambas as variáveis (objetivo e interesse são sinônimos)
+        objetivo = interesse_mencionado
+        interesse = interesse_mencionado
         tempo_inativo = self.format_tempo_inativo(tempo_inativo_horas)
         inbox = inbox_name or 'Equipe'
 
         # Sanitizar variáveis (evitar valores muito longos)
-        if len(objetivo) > 100:
-            objetivo = objetivo[:100] + '...'
         if len(interesse) > 100:
             interesse = interesse[:100] + '...'
+            objetivo = interesse  # Manter sincronizado
 
         # Aplicar variáveis no template
         try:
