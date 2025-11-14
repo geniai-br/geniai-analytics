@@ -2,7 +2,7 @@
 Utils - Multi-Tenant ETL V4
 ============================
 
-Módulo com utilitários compartilhados do sistema multi-tenant.
+Modulo com utilitarios compartilhados do sistema multi-tenant.
 
 Componentes:
 - TemplateManager: Gerenciador de templates de remarketing
