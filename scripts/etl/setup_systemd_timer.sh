@@ -1,18 +1,18 @@
 #!/bin/bash
 
 # ============================================================================
-# Script de Setup do Systemd Timer para ETL AllpFit Analytics
+# Script de Setup do Systemd Timer para ETL GeniAI Analytics
 # ============================================================================
-# Instala e configura execução automática do ETL a cada 1 hora
+# Instala e configura execução automática do ETL a cada 30 minutos
 # ============================================================================
 
 set -e  # Exit on error
 
-PROJECT_DIR="/home/tester/projetos/allpfit-analytics"
-SERVICE_NAME="etl-allpfit"
+PROJECT_DIR="/home/tester/projetos/geniai-analytics"
+SERVICE_NAME="etl-geniai"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "🚀 Setup Systemd Timer - ETL AllpFit Analytics"
+echo "🚀 Setup Systemd Timer - ETL GeniAI Analytics"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
@@ -109,7 +109,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "✅ SETUP CONCLUÍDO COM SUCESSO!"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
-echo "📊 ETL configurado para rodar automaticamente a cada 1 hora"
+echo "📊 ETL configurado para rodar automaticamente a cada 30 minutos"
 echo ""
 echo "📝 Comandos úteis:"
 echo "   • Ver status do timer:       systemctl status ${SERVICE_NAME}.timer"

@@ -11,7 +11,7 @@ echo "🔄 Reiniciando Dashboard Multi-Tenant (Porta 8504)..."
 echo ""
 
 # Diretório do projeto
-PROJECT_DIR="/home/tester/projetos/allpfit-analytics"
+PROJECT_DIR="/home/tester/projetos/geniai-analytics"
 cd "$PROJECT_DIR" || exit 1
 
 # ============================================================================
@@ -20,25 +20,40 @@ cd "$PROJECT_DIR" || exit 1
 
 echo "🔍 Procurando processo Streamlit na porta 8504..."
 
-# Buscar apenas processo Streamlit que está em LISTEN na porta 8504
-PID=$(lsof -i:8504 -sTCP:LISTEN -c streamlit -t 2>/dev/null)
+# Buscar TODOS os processos Streamlit que estão em LISTEN na porta 8504
+PIDS=$(lsof -i:8504 -sTCP:LISTEN -c streamlit -t 2>/dev/null | tr '\n' ' ')
 
-if [ -n "$PID" ]; then
-    echo "   ⚠️  Streamlit encontrado: PID $PID"
-    echo "   🔪 Matando processo Streamlit..."
+if [ -n "$PIDS" ]; then
+    echo "   ⚠️  Streamlit encontrado: PID(s) $PIDS"
+    echo "   🔪 Matando processo(s) Streamlit..."
 
-    # Tentar kill graceful primeiro (SIGTERM)
-    kill -15 "$PID" 2>/dev/null
+    # Tentar kill graceful primeiro (SIGTERM) em TODOS os PIDs
+    for PID in $PIDS; do
+        kill -15 "$PID" 2>/dev/null
+    done
 
     # Aguardar 3 segundos
     sleep 3
 
-    # Verificar se ainda está rodando
-    if lsof -i:8504 -sTCP:LISTEN -c streamlit -t > /dev/null 2>&1; then
-        echo "   💥 Processo resistiu, forçando kill (SIGKILL)..."
-        kill -9 "$PID" 2>/dev/null
+    # Verificar quais ainda estão rodando e forçar kill -9
+    for PID in $PIDS; do
+        if ps -p "$PID" > /dev/null 2>&1; then
+            echo "   💥 Processo $PID resistiu, forçando kill (SIGKILL)..."
+            kill -9 "$PID" 2>/dev/null
+        fi
+    done
+
+    # Aguardar mais tempo após kill -9
+    sleep 3
+
+    # Aguardar porta ser liberada (até 10 tentativas, 20 segundos total)
+    for i in {1..10}; do
+        if ! lsof -i:8504 -sTCP:LISTEN > /dev/null 2>&1; then
+            break
+        fi
+        echo "   ⏳ Aguardando porta liberar (tentativa $i/10)..."
         sleep 2
-    fi
+    done
 
     echo "   ✅ Streamlit encerrado"
 else
