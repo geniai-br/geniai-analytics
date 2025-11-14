@@ -1,0 +1,66 @@
+@startuml C4_Component
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+LAYOUT_WITH_LEGEND()
+
+title Diagrama de Componentes - ETL Pipeline e Dashboard
+
+Container_Boundary(etl, "ETL Pipeline V3") {
+    Component(extractor, "Extractor", "Python", "Extrai dados incrementais do Chatwoot usando watermark")
+    Component(transformer, "Transformer", "Python/Pandas", "Transforma e valida 118 campos de dados")
+    Component(loader, "Loader", "Python/psycopg2", "UPSERT inteligente com batch processing")
+    Component(watermark_mgr, "Watermark Manager", "Python", "Gerencia ponto de sincronização e auditoria")
+    Component(etl_logger, "ETL Logger", "Python/logging", "Logs estruturados com rotação")
+}
+
+Container_Boundary(dashboard, "Streamlit Dashboard") {
+    Component(login_page, "Login Page", "Streamlit", "Autenticação multi-tenant com tema customizado")
+    Component(admin_panel, "Admin Panel", "Streamlit", "Gestão de tenants e overview consolidado")
+    Component(client_dash, "Client Dashboard", "Streamlit", "Visualização de KPIs e métricas do tenant")
+    Component(metrics_calc, "Metrics Calculator", "Python", "Calcula 60+ KPIs de analytics")
+    Component(db_connector, "DB Connector", "SQLAlchemy", "Conexões com pool e retry logic")
+}
+
+Container_Boundary(auth, "Módulo de Autenticação") {
+    Component(auth_core, "Auth Core", "Python/bcrypt", "Autenticação, hash de senhas, geração de sessões")
+    Component(middleware, "Auth Middleware", "Python", "Proteção de rotas, validação de sessões, RLS")
+    Component(rls_manager, "RLS Manager", "PostgreSQL", "Configura contexto RLS por tenant/usuário")
+}
+
+Container_Boundary(analyzers, "Analyzers Module") {
+    Component(rule_based, "Rule-Based Analyzer", "Python", "Análise baseada em regras de negócio")
+    Component(gpt4_analyzer, "GPT-4 Analyzer", "Python/OpenAI", "Análise com IA para predição de conversão")
+    Component(initial_load, "Initial Load Analyzer", "Python", "Análise em lote para carga inicial")
+    Component(crm_crossmatch, "CRM Crossmatch", "Python", "Cross-match telefones Bot ↔ CRM")
+}
+
+ContainerDb(local_db, "PostgreSQL Local", "PostgreSQL 15", "Banco multi-tenant com RLS")
+
+' ETL Flow
+Rel(extractor, watermark_mgr, "Obtém último watermark")
+Rel(extractor, local_db, "Lê dados fonte")
+Rel(extractor, transformer, "Envia dados brutos")
+Rel(transformer, loader, "Envia dados validados")
+Rel(loader, local_db, "UPSERT dados")
+Rel(loader, watermark_mgr, "Atualiza watermark")
+Rel(watermark_mgr, local_db, "Persiste execução")
+Rel(etl_logger, local_db, "Registra logs")
+
+' Dashboard Flow
+Rel(login_page, auth_core, "Valida credenciais")
+Rel(auth_core, local_db, "Verifica usuário/senha")
+Rel(admin_panel, middleware, "Requer autenticação")
+Rel(client_dash, middleware, "Requer autenticação + RLS")
+Rel(middleware, rls_manager, "Configura contexto")
+Rel(rls_manager, local_db, "SET app.current_tenant_id")
+Rel(client_dash, db_connector, "Consulta dados")
+Rel(db_connector, local_db, "Query filtrado por RLS")
+Rel(client_dash, metrics_calc, "Calcula KPIs")
+
+' Analyzers Flow
+Rel(gpt4_analyzer, local_db, "Lê conversas, persiste análises")
+Rel(rule_based, local_db, "Lê conversas, aplica regras")
+Rel(crm_crossmatch, local_db, "Cross-match e persiste")
+
+SHOW_LEGEND()
+@enduml
