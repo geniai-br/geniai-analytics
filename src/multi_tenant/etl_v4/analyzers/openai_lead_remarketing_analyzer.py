@@ -95,7 +95,7 @@ class OpenAILeadRemarketingAnalyzer:
 
         # TemplateManager será injetado ou criado
         if template_manager is None:
-            from ..utils.template_manager import TemplateManager
+            from src.multi_tenant.utils.template_manager import TemplateManager
             self.template_manager = TemplateManager(tenant_id=tenant_id)
         else:
             self.template_manager = template_manager
@@ -152,36 +152,34 @@ class OpenAILeadRemarketingAnalyzer:
             'REMARKETING_FRIO': 'Lead inativo há 7+ dias (tom formal, resgate)',
         }
 
-        return f"""Você é um analista especializado em leads inativos de academias/serviços.
+        return f"""Você é um analista especializado em conversas de atendimento ao cliente e remarketing.
 
 Tipo de Análise: {tipo_descricao.get(tipo_remarketing, 'Indefinido')}
 
 Sua tarefa é analisar a conversa completa entre o lead e a empresa e extrair informações estruturadas em formato JSON:
 
 {{
-  "objetivo": "string - objetivo/interesse principal mencionado (ex: 'Perda de peso', 'CrossFit', 'Consulta nutricional')",
-  "condicao_fisica": "string - se mencionado (ex: 'Sedentário', 'Iniciante', 'Avançado') ou 'Não mencionado'",
-  "objecoes": ["lista de objeções identificadas (ex: 'Preço alto', 'Distância', 'Falta de tempo')"],
+  "interesse_mencionado": "string - principal interesse/necessidade mencionado pelo lead ou 'Não mencionado'",
+  "objecoes": ["lista de objeções/barreiras identificadas (ex: 'Preço', 'Prazo', 'Dúvidas técnicas') ou lista vazia"],
   "urgencia": "string - urgência percebida: 'Alta' | 'Média' | 'Baixa'",
-  "interesse_especifico": "string - interesse específico extraído (ex: 'Aulas de CrossFit', 'Personal trainer')",
-  "contexto_adicional": "string - qualquer informação relevante (horários mencionados, preferências, etc.)",
+  "contexto_relevante": "string - informações relevantes da conversa (datas mencionadas, preferências, dúvidas) ou 'Nenhum contexto relevante'",
   "score_prioridade": "number - de 0 a 5, onde:
-    5 = Lead quente com urgência alta e objeções baixas
-    4 = Lead interessado com objeções moderadas
-    3 = Lead neutro
-    2 = Lead com objeções fortes ou urgência baixa
-    1 = Lead pouco engajado
-    0 = Lead sem potencial aparente",
+    5 = Lead muito engajado, demonstrou forte interesse, poucas objeções
+    4 = Lead interessado, algumas objeções moderadas
+    3 = Lead neutro, interesse médio
+    2 = Lead com baixo engajamento ou objeções significativas
+    1 = Lead pouco engajado, conversa superficial
+    0 = Lead sem potencial aparente ou conversa sem contexto",
   "analise_contextual": "string - análise detalhada do contexto da conversa e perfil do lead (2-3 frases)"
 }}
 
 INSTRUÇÕES IMPORTANTES:
-1. Seja GENÉRICO e NÃO mencione promoções/ofertas específicas que você não controla
-2. Foque em INFORMAÇÕES e SUPORTE, não em vendas agressivas
+1. Seja GENÉRICO - não assuma o tipo de negócio (pode ser serviço, produto, consultoria, etc.)
+2. NÃO mencione promoções/ofertas específicas que você não controla
 3. Extraia apenas dados EXPLICITAMENTE mencionados na conversa
 4. Se algo não foi mencionado, use "Não mencionado" ou lista vazia
 5. A análise deve ser objetiva e baseada em fatos da conversa
-6. O score deve refletir potencial real de conversão baseado na conversa
+6. O score deve refletir potencial real de reengajamento baseado na conversa
 
 RETORNE APENAS O JSON, sem texto adicional."""
 
@@ -205,7 +203,11 @@ RETORNE APENAS O JSON, sem texto adicional."""
             User prompt formatado
         """
         # Extrair mensagens da conversa compilada
-        mensagens = conversa_compilada.get('messages', [])
+        # message_compiled do banco já vem como lista, não como dict com 'messages'
+        if isinstance(conversa_compilada, list):
+            mensagens = conversa_compilada
+        else:
+            mensagens = conversa_compilada.get('messages', [])
 
         # Formatar mensagens para contexto
         mensagens_formatadas = []
@@ -325,7 +327,7 @@ ANALISE A CONVERSA E RETORNE O JSON COM OS DADOS ESTRUTURADOS.
                         raise
 
                 # Validar estrutura mínima
-                required_fields = ['objetivo', 'score_prioridade', 'analise_contextual']
+                required_fields = ['score_prioridade', 'analise_contextual']
                 for field in required_fields:
                     if field not in dados_extraidos:
                         raise ValueError(f"Campo obrigatório ausente: {field}")
