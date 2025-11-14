@@ -321,9 +321,10 @@ Após executar todos os scripts:
 
 ## 📞 Suporte
 
-**Documentação completa:** `docs/multi-tenant/`
-**Cronograma:** `docs/multi-tenant/00_CRONOGRAMA_MASTER.md`
-**Arquitetura DB:** `docs/multi-tenant/01_ARQUITETURA_DB.md`
+**Documentação pública:** `docs/public/`
+**Visão Geral:** `docs/public/VISAO_GERAL_PROJETO.md`
+**Arquitetura DB:** `docs/public/ARQUITETURA_DB.md`
+**Documentação privada:** `docs/private/` (credenciais, checkpoints)
 
 ---
 

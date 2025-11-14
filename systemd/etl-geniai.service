@@ -1,0 +1,32 @@
+[Unit]
+Description=ETL GeniAI Analytics - Sincronização de Dados
+Documentation=https://github.com/geniai/analytics
+After=network.target postgresql.service
+
+[Service]
+Type=oneshot
+User=tester
+Group=tester
+WorkingDirectory=/home/tester/projetos/geniai-analytics
+
+# Executar script Python via venv
+ExecStart=/home/tester/projetos/geniai-analytics/venv/bin/python3 /home/tester/projetos/geniai-analytics/src/multi_tenant/etl_v4/run_all_tenants.py
+
+# Timeout de 30 minutos (para múltiplos tenants)
+TimeoutSec=1800
+
+# Restart em caso de falha
+Restart=on-failure
+RestartSec=300
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=etl-geniai
+
+# Ambiente
+Environment="PYTHONUNBUFFERED=1"
+Environment="PATH=/home/tester/projetos/geniai-analytics/venv/bin:/usr/local/bin:/usr/bin:/bin"
+
+[Install]
+WantedBy=multi-user.target

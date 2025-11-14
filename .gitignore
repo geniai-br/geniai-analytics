@@ -72,3 +72,6 @@ relatorio_conversoes_*.txt
 
 # Docs archive (planejamento histórico - mantido para referência)
 docs/archive/
+
+# Documentação privada (credenciais, checkpoints, prompts)
+docs/private/

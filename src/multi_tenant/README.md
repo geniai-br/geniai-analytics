@@ -368,9 +368,16 @@ AND tablename = 'conversations_analytics';
 
 ## 📞 REFERÊNCIAS
 
-- [DB_DOCUMENTATION.md](../../docs/multi-tenant/DB_DOCUMENTATION.md) - Documentação do banco
-- [00_CRONOGRAMA_MASTER.md](../../docs/multi-tenant/00_CRONOGRAMA_MASTER.md) - Plano completo
-- [02_UX_FLOW.md](../../docs/multi-tenant/02_UX_FLOW.md) - Fluxos de UX
+**Documentação Pública:**
+- [VISAO_GERAL_PROJETO.md](../../docs/public/VISAO_GERAL_PROJETO.md) - Visão geral do projeto
+- [ARQUITETURA_DB.md](../../docs/public/ARQUITETURA_DB.md) - Arquitetura do banco
+
+**Documentação Privada:**
+- [DB_DOCUMENTATION.md](../../docs/private/database/DB_DOCUMENTATION.md) - Credenciais e configurações
+- [HISTORICO_IMPLEMENTACAO_MULTI_TENANT.md](../../docs/private/checkpoints/HISTORICO_IMPLEMENTACAO_MULTI_TENANT.md) - Cronograma completo
+- [INDEX.md](../../docs/private/INDEX.md) - Índice completo da documentação privada
+
+**Código:**
 - [config.py](../app/config.py) - Tema dark base (porta 8503)
 
 ---
