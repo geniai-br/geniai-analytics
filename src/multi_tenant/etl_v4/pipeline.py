@@ -34,6 +34,10 @@ from src.multi_tenant.etl_v4.extractor import RemoteExtractor
 from src.multi_tenant.etl_v4.transformer import ConversationTransformer
 from src.multi_tenant.etl_v4.loader import ConversationLoader
 from src.multi_tenant.etl_v4.watermark_manager import WatermarkManager
+from src.multi_tenant.etl_v4.remarketing_analyzer import (
+    detect_and_reset_reopened_conversations,
+    analyze_inactive_leads
+)
 
 # Configurar logging estruturado
 logging.basicConfig(
@@ -275,6 +279,50 @@ class ETLPipeline:
                     f"Chunk {chunk_count}: "
                     f"{load_stats['inserted']} inseridas, "
                     f"{load_stats['updated']} atualizadas"
+                )
+
+            # FASE 3.5: RESET REOPENED CONVERSATIONS
+            logger.info("")
+            logger.info("FASE 3.5: RESET REOPENED CONVERSATIONS")
+            logger.info("-" * 80)
+
+            resetados_count = detect_and_reset_reopened_conversations(
+                local_engine=self.local_engine,
+                tenant_id=tenant_id
+            )
+
+            if resetados_count > 0:
+                logger.info(f"✅ {resetados_count} conversas reabertas resetadas")
+            else:
+                logger.info("✅ Nenhuma conversa reaberta detectada")
+
+            # FASE 4: ANALYZE INACTIVE LEADS (24h+)
+            logger.info("")
+            logger.info("FASE 4: ANALYZE INACTIVE LEADS (24h+)")
+            logger.info("-" * 80)
+
+            # Configurações de análise
+            analyze_limit = int(os.getenv('ANALYZE_LEADS_LIMIT', '10'))
+            analyze_max_cost = float(os.getenv('ANALYZE_LEADS_MAX_COST_BRL', '0.10'))
+
+            remarketing_stats = analyze_inactive_leads(
+                local_engine=self.local_engine,
+                tenant_id=tenant_id,
+                openai_api_key=openai_api_key,
+                limit=analyze_limit,
+                max_cost_brl=analyze_max_cost
+            )
+
+            # Adicionar estatísticas de remarketing ao OpenAI stats
+            if remarketing_stats.get('analyzed_count', 0) > 0:
+                openai_stats['api_calls'] += remarketing_stats['analyzed_count']
+                openai_stats['total_tokens'] += remarketing_stats['total_tokens']
+                openai_stats['cost_brl'] += remarketing_stats['total_cost_brl']
+
+                logger.info(
+                    f"✅ Remarketing: {remarketing_stats['analyzed_count']} leads analisados | "
+                    f"Tokens: {remarketing_stats['total_tokens']} | "
+                    f"Custo: R$ {remarketing_stats['total_cost_brl']:.4f}"
                 )
 
             # 9. Calcular custo OpenAI (se usado)
