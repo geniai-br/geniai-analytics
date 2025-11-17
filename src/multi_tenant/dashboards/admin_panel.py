@@ -151,65 +151,51 @@ def render_global_metrics(metrics):
 
 def render_tenant_card(tenant):
     """
-    Renderiza card de um cliente
+    Renderiza card de um cliente (layout compacto para grid com bordas)
 
     Args:
         tenant: Dict com dados do tenant
     """
-    with st.container():
+    # Card com bordas e fundo usando CSS inline
+    st.markdown("""
+        <style>
+        div[data-testid="stVerticalBlock"] > div:has(div[data-testid="column"]) {
+            gap: 1.5rem;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+    with st.container(border=True):  # Usar border nativo do Streamlit
         # Cabeçalho do card
-        col1, col2 = st.columns([3, 1])
+        status_emoji = "✅" if tenant['status'] == 'active' else "⚠️"
+        st.markdown(f"### {status_emoji} {tenant['name']}")
+        st.caption(f"📦 `{tenant['slug']}`")
+
+        # Métricas compactas (2x2 grid)
+        col1, col2 = st.columns(2)
 
         with col1:
-            # Nome e status
-            status_emoji = "✅" if tenant['status'] == 'active' else "⚠️"
-            st.markdown(f"### {status_emoji} {tenant['name']}")
-            st.caption(f"Slug: `{tenant['slug']}` | Plano: **{tenant['plan']}**")
-
-        with col2:
-            # Botão Ver Dashboard
-            if st.button("📊 Ver Dashboard", key=f"dash_{tenant['id']}", use_container_width=True):
-                # Armazenar tenant selecionado
-                st.session_state['selected_tenant_id'] = tenant['id']
-                st.rerun()
-
-        # Métricas do card
-        col1, col2, col3, col4 = st.columns(4)
-
-        with col1:
+            st.metric("Conversas", f"{tenant['conversation_count']:,}".replace(',', '.'))
             st.metric("Inboxes", len(tenant['inbox_ids']))
 
         with col2:
+            st.metric("Leads", f"{tenant['lead_count']:,}".replace(',', '.'))
             st.metric("Usuários", tenant['user_count'])
 
-        with col3:
-            st.metric("Conversas", f"{tenant['conversation_count']:,}".replace(',', '.'))
-
-        with col4:
-            st.metric("Leads", f"{tenant['lead_count']:,}".replace(',', '.'))
-
-        # Última sincronização e próxima atualização
+        # Status de sincronização (compacto)
         if tenant['last_sync']:
-            from datetime import datetime, timedelta
-            from multi_tenant.utils.etl_schedule import get_next_etl_time, format_etl_countdown
-
-            # Converter UTC para SP
+            from datetime import timedelta
             last_sync_sp = tenant['last_sync'] - timedelta(hours=3)
-            sync_str = last_sync_sp.strftime('%d/%m/%Y %H:%M')
-
-            st.caption(f"📅 Última Sincronização: {sync_str}")
-
-            # Calcular próxima atualização baseado na última sync
-            next_info = get_next_etl_time(tenant['last_sync'])
-            if next_info['is_overdue']:
-                st.caption("🔄 Atualização em andamento ou atrasada")
-            else:
-                st.caption(f"⏰ Próxima Atualização: {next_info['formatted_datetime']} (em {next_info['hours_left']}h {next_info['minutes_left']}min)")
+            sync_str = last_sync_sp.strftime('%d/%m %H:%M')
+            st.caption(f"🔄 Última sync: {sync_str}")
         else:
-            st.caption("📅 Última Sincronização: Nenhuma")
-            st.caption("⏰ Aguardando primeira sincronização automática")
+            st.caption("🔄 Aguardando primeira sync")
 
-        st.divider()
+        # Botão Acessar (destaque no final)
+        if st.button("✅ Acessar", key=f"dash_{tenant['id']}", use_container_width=True, type="primary"):
+            # Armazenar tenant selecionado
+            st.session_state['selected_tenant_id'] = tenant['id']
+            st.rerun()
 
 
 # ============================================================================
@@ -1417,9 +1403,17 @@ def show_admin_panel(session):
             - Por enquanto, apenas visualização dos clientes existentes
         """)
     else:
-        # Renderizar cards dos clientes
-        for tenant in tenants:
-            render_tenant_card(tenant)
+        # Renderizar cards em grid (3 colunas por linha)
+        # Dividir tenants em grupos de 3
+        for i in range(0, len(tenants), 3):
+            cols = st.columns(3)
+
+            # Renderizar até 3 cards por linha
+            for j in range(3):
+                idx = i + j
+                if idx < len(tenants):
+                    with cols[j]:
+                        render_tenant_card(tenants[idx])
 
     st.divider()
 
