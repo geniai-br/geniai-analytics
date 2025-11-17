@@ -1655,6 +1655,7 @@ def render_leads_table(df, df_original, tenant_name, date_start, date_end):
     # FASE 7: Remover colunas LEAD, CRM, VISITA, SCORE e CLASSIFICAÇÃO IA (2025-11-13)
     # FASE 7.1: Adicionar Primeira/Última Conversa, remover Data (2025-11-13)
     # FASE 7.2: Adicionar Conversa Completa formatada, remover prévia e expanders (2025-11-13)
+    # FASE 8.9: Adicionar Análise de IA e Sugestão de Disparo (2025-11-17)
     display_df = leads_paginated[[
         'conversation_display_id',
         'contact_name',
@@ -1663,7 +1664,9 @@ def render_leads_table(df, df_original, tenant_name, date_start, date_end):
         'primeiro_contato',  # [FASE 7.1 - NOVO]
         'ultimo_contato',    # [FASE 7.1 - NOVO]
         'nome_mapeado_bot',
-        'conversa_compilada'  # [FASE 6 - NOVO]
+        'conversa_compilada',  # [FASE 6 - NOVO]
+        'analise_ia',  # [FASE 8.9 - NOVO]
+        'sugestao_disparo'  # [FASE 8.9 - NOVO]
     ]].copy()
 
     # Formatar conversa completa (igual single-tenant) [FASE 7.2 - NOVO]
@@ -1671,6 +1674,21 @@ def render_leads_table(df, df_original, tenant_name, date_start, date_end):
         lambda row: format_conversation_readable(row['conversa_compilada'], row['contact_name'] or "Lead"),
         axis=1
     )
+
+    # [FASE 8.9 - NOVO] Formatar análise de IA (sem truncamento)
+    def format_analise_ia(analise):
+        if pd.isna(analise) or analise == '' or analise is None:
+            return '-'
+        return str(analise).strip()
+
+    # [FASE 8.9 - NOVO] Formatar sugestão de disparo (sem truncamento)
+    def format_sugestao_disparo(sugestao):
+        if pd.isna(sugestao) or sugestao == '' or sugestao is None:
+            return '-'
+        return str(sugestao).strip()
+
+    display_df['analise_ia_formatada'] = display_df['analise_ia'].apply(format_analise_ia)
+    display_df['sugestao_disparo_formatada'] = display_df['sugestao_disparo'].apply(format_sugestao_disparo)
 
     # Selecionar colunas para visualização
     display_df_view = display_df[[
@@ -1681,7 +1699,9 @@ def render_leads_table(df, df_original, tenant_name, date_start, date_end):
         'primeiro_contato',
         'ultimo_contato',
         'nome_mapeado_bot',
-        'conversa_formatada'  # [FASE 7.2 - NOVO: Conversa completa substituindo prévia]
+        'conversa_formatada',  # [FASE 7.2 - NOVO: Conversa completa substituindo prévia]
+        'analise_ia_formatada',  # [FASE 8.9 - NOVO]
+        'sugestao_disparo_formatada'  # [FASE 8.9 - NOVO]
     ]].copy()
 
     display_df_view.columns = [
@@ -1692,7 +1712,9 @@ def render_leads_table(df, df_original, tenant_name, date_start, date_end):
         'Primeira Conversa',  # [FASE 7.1 - NOVO]
         'Última Conversa',    # [FASE 7.1 - NOVO]
         'Nome Mapeado',
-        'Conversa Completa'  # [FASE 7.2 - NOVO: Coluna completa na tabela]
+        'Conversa Completa',  # [FASE 7.2 - NOVO: Coluna completa na tabela]
+        'Análise de IA',  # [FASE 8.9 - NOVO]
+        'Sugestão de Disparo'  # [FASE 8.9 - NOVO]
     ]
 
     # REMOVIDO (FASE 7): Formatação de colunas booleanas (Lead, Visita, CRM)
@@ -2034,7 +2056,7 @@ def render_remarketing_analysis_section(df, tenant_id):
         st.divider()
 
         # === CABEÇALHO DA TABELA ===
-        col_check_h, col_id_h, col_nome_h, col_tel_h, col_tipo_h, col_inativ_h, col_score_h = st.columns([0.5, 1, 2, 1.5, 2, 1, 0.8])
+        col_check_h, col_id_h, col_nome_h, col_tel_h, col_tipo_h, col_inativ_h, col_score_h, col_analise_h, col_sugestao_h = st.columns([0.4, 0.7, 1.5, 1.2, 1.5, 0.8, 0.6, 2, 1.5])
 
         with col_check_h:
             st.markdown("**☑️**")
@@ -2050,12 +2072,16 @@ def render_remarketing_analysis_section(df, tenant_id):
             st.markdown("**Inatividade**")
         with col_score_h:
             st.markdown("**Score**")
+        with col_analise_h:
+            st.markdown("**Análise de IA**")
+        with col_sugestao_h:
+            st.markdown("**Sugestão de Disparo**")
 
         st.divider()
 
         # === LINHAS DA TABELA ===
         for idx, row in leads_paginated.iterrows():
-            col_check, col_id, col_nome, col_tel, col_tipo, col_inativ, col_score = st.columns([0.5, 1, 2, 1.5, 2, 1, 0.8])
+            col_check, col_id, col_nome, col_tel, col_tipo, col_inativ, col_score, col_analise, col_sugestao = st.columns([0.4, 0.7, 1.5, 1.2, 1.5, 0.8, 0.6, 2, 1.5])
 
             conv_id = row['conversation_id']
 
@@ -2093,6 +2119,20 @@ def render_remarketing_analysis_section(df, tenant_id):
 
             with col_score:
                 st.markdown(f"**{row['score_visual']}**/5")
+
+            with col_analise:
+                # Truncar análise para caber na coluna
+                analise_text = row['analise_ia'] if pd.notna(row['analise_ia']) else '-'
+                if len(analise_text) > 100:
+                    analise_text = analise_text[:97] + '...'
+                st.markdown(f"<small>{analise_text}</small>", unsafe_allow_html=True)
+
+            with col_sugestao:
+                # Truncar sugestão para caber na coluna
+                sugestao_text = row['sugestao_disparo'] if pd.notna(row['sugestao_disparo']) else '-'
+                if len(sugestao_text) > 80:
+                    sugestao_text = sugestao_text[:77] + '...'
+                st.markdown(f"<small>{sugestao_text}</small>", unsafe_allow_html=True)
 
         st.divider()
 

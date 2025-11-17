@@ -90,7 +90,7 @@ Vi que você demonstrou interesse em {interesse} há pouco tempo. Ficou com algu
 
 Ainda tenho informações que podem te ajudar na decisão. Me avisa se quiser conversar!
 
-{inbox}"""
+Equipe {inbox}"""
 
     def _get_template_medio(self) -> str:
         """
@@ -105,7 +105,7 @@ Vi que você perguntou sobre {interesse} há alguns dias. Ainda tem interesse?
 
 Gostaria de saber se posso te passar mais informações ou tirar alguma dúvida.
 
-{inbox}"""
+Equipe {inbox}"""
 
     def _get_template_frio(self) -> str:
         """
@@ -122,8 +122,7 @@ Gostaria de verificar se ainda tem interesse ou se posso ajudar com alguma infor
 
 Estou à disposição.
 
-Atenciosamente,
-{inbox}"""
+Equipe {inbox}"""
 
     def _get_template_generico(self) -> str:
         """
@@ -137,7 +136,7 @@ Vi sua conversa conosco há {tempo_inativo} e gostaria de saber se ainda tem int
 
 Estou à disposição para tirar qualquer dúvida! 😊
 
-{inbox}"""
+Equipe {inbox}"""
 
     def _get_template_sem_interesse(self, tipo_remarketing: str) -> str:
         """
@@ -153,7 +152,7 @@ Vi que você entrou em contato conosco há pouco tempo. Ficou com alguma dúvida
 
 Ainda posso te passar mais informações ou ajudar no que precisar. Me avisa!
 
-{inbox}""",
+Equipe {inbox}""",
 
             'REMARKETING_MEDIO': """Oi {nome}!
 
@@ -161,7 +160,7 @@ Vi que você entrou em contato conosco há alguns dias. Ainda tem interesse em n
 
 Gostaria de saber se posso te passar mais informações ou tirar alguma dúvida.
 
-{inbox}""",
+Equipe {inbox}""",
 
             'REMARKETING_FRIO': """Olá {nome},
 
@@ -171,8 +170,7 @@ Gostaria de verificar se ainda posso ajudar com alguma informação ou dúvida.
 
 Estou à disposição.
 
-Atenciosamente,
-{inbox}"""
+Equipe {inbox}"""
         }
 
         return templates_sem_interesse.get(tipo_remarketing, self._get_template_generico())
