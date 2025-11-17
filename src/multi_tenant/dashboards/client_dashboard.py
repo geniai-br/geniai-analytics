@@ -2355,6 +2355,7 @@ def show_client_dashboard(session, tenant_id=None):
     st.divider()
 
     # === INICIALIZAR SESSION STATE DOS FILTROS RÁPIDOS === [FASE 4]
+    # IMPORTANTE: Inicializar ANTES de detectar mudança de tenant
     if 'filter_nome' not in st.session_state:
         st.session_state.filter_nome = ""
     if 'filter_telefone' not in st.session_state:
@@ -2367,6 +2368,32 @@ def show_client_dashboard(session, tenant_id=None):
         st.session_state.filter_classificacao = []
     if 'filter_score_min' not in st.session_state:
         st.session_state.filter_score_min = 0.0
+
+    # === DETECTAR MUDANÇA DE TENANT E RESETAR FILTROS === [BUGFIX]
+    # Quando admin troca de tenant, os filtros do tenant anterior persistem
+    # causando queries com 0 resultados (inboxes/status inexistentes)
+    if 'last_viewed_tenant_id' not in st.session_state:
+        st.session_state.last_viewed_tenant_id = display_tenant_id
+
+    # Detectar mudança de tenant (comparação ocorre APÓS inicialização)
+    if st.session_state.last_viewed_tenant_id != display_tenant_id:
+        # Mudou de tenant - Resetar TODOS os filtros e estados
+        st.session_state.filter_nome = ""
+        st.session_state.filter_telefone = ""
+        st.session_state.filter_inboxes = []
+        st.session_state.filter_status_list = []
+        st.session_state.filter_classificacao = []
+        st.session_state.filter_score_min = 0.0
+        # Resetar paginação
+        if 'leads_page' in st.session_state:
+            st.session_state.leads_page = 1
+        if 'remarketing_page' in st.session_state:
+            st.session_state.remarketing_page = 1
+        # Resetar seleções de remarketing
+        if 'selected_remarketing_leads' in st.session_state:
+            st.session_state.selected_remarketing_leads = set()
+        # Atualizar tenant atual
+        st.session_state.last_viewed_tenant_id = display_tenant_id
 
     # === FILTROS DE DATA E INBOX ===
     col1, col2, col3, col4 = st.columns([2, 1, 1, 2])
