@@ -47,6 +47,34 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def has_bot_or_agent_response(message_compiled: Any) -> bool:
+    """
+    Verifica se a conversa tem resposta do bot ou agente.
+
+    Args:
+        message_compiled: JSONB com mensagens da conversa
+
+    Returns:
+        True se houver pelo menos 1 mensagem do bot/agente, False caso contrário
+    """
+    if not message_compiled:
+        return False
+
+    # Parse JSON se necessário
+    messages = message_compiled if isinstance(message_compiled, list) else json.loads(message_compiled) if isinstance(message_compiled, str) else []
+
+    if not messages:
+        return False
+
+    # Verificar se existe mensagem do bot ou agente
+    for msg in messages:
+        sender = msg.get('sender')
+        if sender in ['AgentBot', 'User', 'Agent']:
+            return True
+
+    return False
+
+
 def detect_and_reset_reopened_conversations(
     local_engine: Engine,
     tenant_id: int
@@ -213,11 +241,21 @@ def analyze_inactive_leads(
 
     analyzed_count = 0
     failed_count = 0
+    skipped_no_response = 0
     total_tokens = 0
     total_cost_brl = 0.0
 
     for lead in leads:
         try:
+            # FILTRO: Pular conversas sem resposta do bot/agente
+            if not has_bot_or_agent_response(lead['message_compiled']):
+                skipped_no_response += 1
+                logger.info(
+                    f"⏭️  Lead #{lead['display_id']} PULADO: "
+                    f"Sem resposta do bot/agente (apenas {lead['contact_messages_count']} msgs do contato)"
+                )
+                continue
+
             # Verificar limite de custo
             if total_cost_brl >= max_cost_brl:
                 logger.warning(
@@ -267,13 +305,15 @@ def analyze_inactive_leads(
     # Log estatísticas
     logger.info("-" * 80)
     logger.info(
-        f"ANÁLISE CONCLUÍDA: {analyzed_count} sucesso, {failed_count} falhas | "
+        f"ANÁLISE CONCLUÍDA: {analyzed_count} sucesso, {failed_count} falhas, "
+        f"{skipped_no_response} pulados (sem resposta) | "
         f"Tokens: {total_tokens} | Custo: R$ {total_cost_brl:.4f}"
     )
 
     return {
         'analyzed_count': analyzed_count,
         'failed_count': failed_count,
+        'skipped_no_response': skipped_no_response,
         'total_tokens': total_tokens,
         'total_cost_brl': total_cost_brl
     }

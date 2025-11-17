@@ -139,6 +139,44 @@ Estou à disposição para tirar qualquer dúvida! 😊
 
 {inbox}"""
 
+    def _get_template_sem_interesse(self, tipo_remarketing: str) -> str:
+        """
+        Templates alternativos para quando NÃO há interesse identificado.
+
+        Usados quando interesse_mencionado == "Não mencionado" ou similar.
+        Evita mensagens como "Notamos seu interesse em Não mencionado".
+        """
+        templates_sem_interesse = {
+            'REMARKETING_RECENTE': """Oi {nome}! 😊
+
+Vi que você entrou em contato conosco há pouco tempo. Ficou com alguma dúvida?
+
+Ainda posso te passar mais informações ou ajudar no que precisar. Me avisa!
+
+{inbox}""",
+
+            'REMARKETING_MEDIO': """Oi {nome}!
+
+Vi que você entrou em contato conosco há alguns dias. Ainda tem interesse em nossos serviços?
+
+Gostaria de saber se posso te passar mais informações ou tirar alguma dúvida.
+
+{inbox}""",
+
+            'REMARKETING_FRIO': """Olá {nome},
+
+Vi que você entrou em contato conosco há {tempo_inativo}.
+
+Gostaria de verificar se ainda posso ajudar com alguma informação ou dúvida.
+
+Estou à disposição.
+
+Atenciosamente,
+{inbox}"""
+        }
+
+        return templates_sem_interesse.get(tipo_remarketing, self._get_template_generico())
+
     def format_tempo_inativo(self, horas: float) -> str:
         """
         Formata tempo de inatividade de forma legível.
@@ -195,14 +233,24 @@ Estou à disposição para tirar qualquer dúvida! 😊
         if 'objetivo' in dados_extraidos and interesse_mencionado == 'nossos serviços':
             interesse_mencionado = dados_extraidos.get('objetivo', 'nossos serviços')
 
+        # Detectar se interesse é inválido ("Não mencionado", "Nenhum", etc)
+        interesse_invalido = interesse_mencionado.lower() in [
+            'não mencionado', 'nao mencionado', 'nenhum', 'não identificado',
+            'nao identificado', 'indefinido', 'desconhecido'
+        ]
+
+        # Se interesse inválido, usar template alternativo (sem mencionar interesse)
+        if interesse_invalido:
+            template = self._get_template_sem_interesse(tipo_remarketing)
+
         # Usar interesse_mencionado para ambas as variáveis (objetivo e interesse são sinônimos)
-        objetivo = interesse_mencionado
-        interesse = interesse_mencionado
+        objetivo = interesse_mencionado if not interesse_invalido else ''
+        interesse = interesse_mencionado if not interesse_invalido else ''
         tempo_inativo = self.format_tempo_inativo(tempo_inativo_horas)
         inbox = inbox_name or 'Equipe'
 
         # Sanitizar variáveis (evitar valores muito longos)
-        if len(interesse) > 100:
+        if interesse and len(interesse) > 100:
             interesse = interesse[:100] + '...'
             objetivo = interesse  # Manter sincronizado
 
