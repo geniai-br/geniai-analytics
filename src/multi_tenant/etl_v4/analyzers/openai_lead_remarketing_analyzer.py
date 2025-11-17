@@ -32,8 +32,13 @@ from openai import OpenAI
 from openai.types.chat import ChatCompletion
 
 # Importar Rate Limiter e Cost Tracker (FASE 9.1)
-from src.multi_tenant.utils.rate_limiter import get_rate_limiter
-from src.multi_tenant.utils.cost_tracker import get_cost_tracker
+import sys
+from pathlib import Path
+# Garantir que o diretório raiz está no path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
+
+from multi_tenant.utils.rate_limiter import get_rate_limiter
+from multi_tenant.utils.cost_tracker import get_cost_tracker
 
 # Configurar logging
 logging.basicConfig(
