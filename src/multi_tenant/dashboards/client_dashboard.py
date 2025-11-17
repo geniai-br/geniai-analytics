@@ -33,14 +33,16 @@ def load_conversations(tenant_id, date_start=None, date_end=None, inbox_filter=N
     Carrega conversas do tenant (filtrado automaticamente via RLS)
 
     Args:
-        tenant_id: ID do tenant (usado apenas para display, RLS filtra automaticamente)
+        tenant_id: ID do tenant (IMPORTANTE: usado como chave de cache!)
         date_start: Data início do filtro (opcional)
         date_end: Data fim do filtro (opcional)
 
     Returns:
         pd.DataFrame: Conversas do tenant
     """
+    # IMPORTANTE: Configurar RLS DENTRO da função para garantir cache correto por tenant
     engine = get_database_engine()
+    set_rls_context(engine, tenant_id, tenant_id)  # Usar tenant_id como user_id temporário
 
     # Query base (RLS filtra automaticamente por tenant_id)
     query = """
@@ -2392,6 +2394,8 @@ def show_client_dashboard(session, tenant_id=None):
         # Resetar seleções de remarketing
         if 'selected_remarketing_leads' in st.session_state:
             st.session_state.selected_remarketing_leads = set()
+        # IMPORTANTE: Limpar cache do Streamlit para forçar reload dos dados
+        st.cache_data.clear()
         # Atualizar tenant atual
         st.session_state.last_viewed_tenant_id = display_tenant_id
 
