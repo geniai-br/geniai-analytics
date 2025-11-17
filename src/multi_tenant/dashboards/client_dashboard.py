@@ -1628,13 +1628,14 @@ def render_leads_table(df, df_original, tenant_name, date_start, date_end):
         with col_page_input:
             # Input direto de página
             page_input = st.number_input(
-                "Ir para página",
+                "Página",
                 min_value=1,
                 max_value=total_pages,
                 value=st.session_state.leads_page,
                 step=1,
                 key="page_input",
-                label_visibility="collapsed"
+                label_visibility="collapsed",
+                help="Ir para página específica"
             )
             if page_input != st.session_state.leads_page:
                 st.session_state.leads_page = page_input
@@ -1814,15 +1815,15 @@ def format_tipo_remarketing_badge(tipo):
     return badges.get(tipo, '-')
 
 
-def format_score_stars(score):
+def format_score_numerico(score):
     """
-    Formata score de prioridade como estrelas
+    Formata score de prioridade como número (0-5)
 
     Args:
         score: Score de 0 a 5
 
     Returns:
-        str: Estrelas formatadas
+        str: Score numérico formatado ou '-' se inválido
     """
     if pd.isna(score) or score is None:
         return '-'
@@ -1831,19 +1832,19 @@ def format_score_stars(score):
     if score < 0 or score > 5:
         return '-'
 
-    return '⭐' * score if score > 0 else '☆'
+    return str(score)
 
 
 def render_remarketing_analysis_section(df, tenant_id):
     """
     Renderiza seção de Análise de Remarketing (FASE 8)
 
-    Mostra:
+    Features:
     - Cards de resumo (Analisados, Aguardando 24h, Ativos)
     - Filtro por tipo de remarketing
-    - Tabela com Status, Tipo, Nome, Inatividade, Score
-    - Expanders com análise completa + sugestão
-    - Botão "Analisar Pendentes (24h+)"
+    - Tabela paginada com checkboxes de seleção
+    - Botões de disparo (individual, selecionados, todos)
+    - Expanders sincronizados com página atual
 
     Args:
         df: DataFrame com conversas (já filtrado)
@@ -1896,10 +1897,10 @@ def render_remarketing_analysis_section(df, tenant_id):
 
     st.divider()
 
-    # === FILTRO POR TIPO DE REMARKETING ===
-    col_filter, col_btn = st.columns([3, 2])
+    # === FILTROS: TIPO E SCORE ===
+    col_filter_tipo, col_filter_score, col_btn = st.columns([2, 1.5, 1.5])
 
-    with col_filter:
+    with col_filter_tipo:
         tipo_filter = st.multiselect(
             "🎯 Filtrar por Tipo de Remarketing:",
             options=['REMARKETING_RECENTE', 'REMARKETING_MEDIO', 'REMARKETING_FRIO'],
@@ -1911,6 +1912,17 @@ def render_remarketing_analysis_section(df, tenant_id):
             }.get(x, x),
             key="tipo_remarketing_filter",
             help="Filtrar leads analisados por tipo de remarketing"
+        )
+
+    with col_filter_score:
+        score_filter = st.slider(
+            "⭐ Score Mínimo:",
+            min_value=0,
+            max_value=5,
+            value=0,
+            step=1,
+            key="score_remarketing_filter",
+            help="Filtrar por score de prioridade (0 = todos, 1-5 = mínimo)"
         )
 
     with col_btn:
@@ -1927,130 +1939,355 @@ def render_remarketing_analysis_section(df, tenant_id):
 
     st.divider()
 
-    # === APLICAR FILTRO ===
+    # === APLICAR FILTROS ===
     leads_display = leads_df.copy()
+
+    # Filtro por tipo
     if tipo_filter:
         leads_display = leads_display[leads_display['tipo_conversa'].isin(tipo_filter)]
 
-    # === TABELA DE LEADS COM ANÁLISE ===
-    st.markdown("#### 📋 Leads com Análise de Remarketing")
+    # Filtro por score mínimo
+    if score_filter > 0:
+        leads_display = leads_display[leads_display['score_prioridade'] >= score_filter]
 
-    # Filtrar apenas leads analisados
+    # === FILTRAR APENAS LEADS ANALISADOS ===
     leads_analisados = leads_display[leads_display['analisado_em'].notna()].copy()
 
     if leads_analisados.empty:
         st.info("ℹ️ Nenhum lead analisado encontrado")
         return
 
+    # Ordenar por inatividade (mais recentes primeiro)
+    leads_analisados = leads_analisados.sort_values('ultimo_contato', ascending=False)
+
     # Adicionar colunas formatadas
     leads_analisados['status_badge'] = leads_analisados.apply(get_remarketing_status_badge, axis=1)
     leads_analisados['tipo_badge'] = leads_analisados['tipo_conversa'].apply(format_tipo_remarketing_badge)
     leads_analisados['inatividade_formatada'] = leads_analisados['horas_inativo'].apply(format_inactivity_time)
-    leads_analisados['score_visual'] = leads_analisados['score_prioridade'].apply(format_score_stars)
+    leads_analisados['score_visual'] = leads_analisados['score_prioridade'].apply(format_score_numerico)
 
-    # Preparar DataFrame para exibição
-    display_remarketing = leads_analisados[[
-        'conversation_display_id',
-        'contact_name',
-        'contact_phone',
-        'status_badge',
-        'tipo_badge',
-        'inatividade_formatada',
-        'score_visual'
-    ]].copy()
+    # === PAGINAÇÃO ===
+    # Inicializar estado de paginação
+    if 'remarketing_page' not in st.session_state:
+        st.session_state.remarketing_page = 1
 
-    display_remarketing.columns = [
-        'ID',
-        'Nome',
-        'Telefone',
-        'Status',
-        'Tipo Remarketing',
-        'Inatividade',
-        'Score'
-    ]
+    # Configuração
+    LEADS_PER_PAGE = 20
+    total_leads = len(leads_analisados)
+    total_pages = (total_leads + LEADS_PER_PAGE - 1) // LEADS_PER_PAGE
 
-    # Exibir tabela
-    st.dataframe(
-        display_remarketing,
-        use_container_width=True,
-        hide_index=True,
-        height=400
-    )
+    # Garantir que página está dentro dos limites
+    if st.session_state.remarketing_page > total_pages and total_pages > 0:
+        st.session_state.remarketing_page = total_pages
+    if st.session_state.remarketing_page < 1:
+        st.session_state.remarketing_page = 1
 
-    st.divider()
+    # Calcular offset
+    offset = (st.session_state.remarketing_page - 1) * LEADS_PER_PAGE
 
-    # === EXPANDERS COM ANÁLISE DETALHADA ===
-    st.markdown("#### 🔍 Análise Detalhada (Expanders)")
+    # Paginar
+    leads_paginated = leads_analisados.iloc[offset:offset + LEADS_PER_PAGE].copy()
 
-    for idx, row in leads_analisados.head(10).iterrows():
-        with st.expander(
-            f"💬 {row['contact_name']} (ID: {row['conversation_display_id']}) - {row['tipo_badge']}"
-        ):
-            col_info, col_score = st.columns([3, 1])
+    # Inicializar seleção global (persiste entre páginas)
+    if 'selected_remarketing_leads' not in st.session_state:
+        st.session_state.selected_remarketing_leads = set()
 
-            with col_info:
-                st.markdown(f"**📞 Telefone:** {row['contact_phone']}")
-                st.markdown(f"**⏰ Inatividade:** {row['inatividade_formatada']}")
-                st.markdown(f"**📊 Status:** {row['status_badge']}")
+    # === ABAS PRINCIPAIS ===
+    tab1, tab2, tab3 = st.tabs(["📊 Tabela de Leads", "🔍 Análise Detalhada", "📤 Disparo"])
 
-            with col_score:
-                st.markdown(f"**⭐ Score:** {row['score_visual']}")
-                if pd.notna(row['analisado_em']):
-                    st.caption(f"Analisado: {row['analisado_em'].strftime('%d/%m/%Y %H:%M')}")
+    # ========================================
+    # ABA 1: TABELA DE LEADS
+    # ========================================
+    with tab1:
+        # Checkbox "Selecionar todos" (página atual)
+        col_select_all, col_info_selected = st.columns([1, 3])
 
-            st.divider()
+        with col_select_all:
+            # Verificar se TODOS da página atual estão selecionados
+            page_ids = set(leads_paginated['conversation_id'].tolist())
+            all_page_selected = page_ids.issubset(st.session_state.selected_remarketing_leads)
 
-            # Análise IA
-            if pd.notna(row['analise_ia']):
-                st.markdown("**📝 Análise IA:**")
-                st.info(row['analise_ia'])
+            select_all_page = st.checkbox(
+                "Selecionar todos (página)",
+                value=all_page_selected,
+                key="select_all_remarketing_page",
+                help="Selecionar/desselecionar todos os leads da página atual"
+            )
 
-            # Dados extraídos
-            if pd.notna(row['dados_extraidos_ia']):
-                st.markdown("**📊 Dados Extraídos:**")
-                import json
-                try:
-                    dados = json.loads(row['dados_extraidos_ia']) if isinstance(row['dados_extraidos_ia'], str) else row['dados_extraidos_ia']
+            # Atualizar seleção
+            if select_all_page:
+                st.session_state.selected_remarketing_leads.update(page_ids)
+            else:
+                # Só desmarcar se o checkbox foi desmarcado pelo usuário
+                if all_page_selected:
+                    st.session_state.selected_remarketing_leads -= page_ids
 
-                    col_d1, col_d2 = st.columns(2)
-                    with col_d1:
-                        st.markdown(f"- **Interesse:** {dados.get('interesse_mencionado', 'N/A')}")
-                        st.markdown(f"- **Urgência:** {dados.get('urgencia', 'N/A')}")
-                    with col_d2:
-                        objecoes = dados.get('objecoes', [])
-                        st.markdown(f"- **Objeções:** {', '.join(objecoes) if objecoes else 'Nenhuma'}")
-                except:
-                    st.caption("Erro ao processar dados extraídos")
+        with col_info_selected:
+            num_selected = len(st.session_state.selected_remarketing_leads)
+            if num_selected > 0:
+                st.caption(f"✅ **{num_selected}** lead(s) selecionado(s) (todas as páginas)")
+            else:
+                st.caption("ℹ️ Nenhum lead selecionado")
 
-            # Sugestão de disparo
-            if pd.notna(row['sugestao_disparo']):
-                st.markdown("**💬 Sugestão de Mensagem de Remarketing:**")
-                st.success(row['sugestao_disparo'])
+        st.divider()
 
-                # Botão copiar (futuro - FASE 8.4)
-                st.button(
-                    "📋 Copiar Sugestão",
-                    key=f"copy_sugestao_{row['conversation_id']}",
-                    disabled=True,
-                    help="Em breve: Copiar sugestão para clipboard"
+        # === CABEÇALHO DA TABELA ===
+        col_check_h, col_id_h, col_nome_h, col_tel_h, col_tipo_h, col_inativ_h, col_score_h = st.columns([0.5, 1, 2, 1.5, 2, 1, 0.8])
+
+        with col_check_h:
+            st.markdown("**☑️**")
+        with col_id_h:
+            st.markdown("**ID**")
+        with col_nome_h:
+            st.markdown("**Nome do Lead**")
+        with col_tel_h:
+            st.markdown("**Telefone**")
+        with col_tipo_h:
+            st.markdown("**Tipo de Remarketing**")
+        with col_inativ_h:
+            st.markdown("**Inatividade**")
+        with col_score_h:
+            st.markdown("**Score**")
+
+        st.divider()
+
+        # === LINHAS DA TABELA ===
+        for idx, row in leads_paginated.iterrows():
+            col_check, col_id, col_nome, col_tel, col_tipo, col_inativ, col_score = st.columns([0.5, 1, 2, 1.5, 2, 1, 0.8])
+
+            conv_id = row['conversation_id']
+
+            with col_check:
+                # Checkbox individual
+                is_selected = conv_id in st.session_state.selected_remarketing_leads
+                selected = st.checkbox(
+                    "Selecionar",
+                    value=is_selected,
+                    key=f"check_remarketing_{conv_id}",
+                    label_visibility="collapsed",
+                    help="Selecionar/desselecionar este lead para disparo"
                 )
 
-            # Metadados (tokens e custo)
-            if pd.notna(row['metadados_analise_ia']):
-                st.markdown("**📊 Metadados da Análise:**")
-                try:
-                    metadados = json.loads(row['metadados_analise_ia']) if isinstance(row['metadados_analise_ia'], str) else row['metadados_analise_ia']
+                # Atualizar seleção
+                if selected:
+                    st.session_state.selected_remarketing_leads.add(conv_id)
+                else:
+                    st.session_state.selected_remarketing_leads.discard(conv_id)
 
-                    col_m1, col_m2, col_m3 = st.columns(3)
-                    with col_m1:
-                        st.metric("Tokens", metadados.get('tokens_total', 0))
-                    with col_m2:
-                        custo = metadados.get('custo_brl', 0)
-                        st.metric("Custo", f"R$ {custo:.4f}")
-                    with col_m3:
-                        st.caption(f"Modelo: {metadados.get('modelo', 'N/A')}")
-                except:
-                    st.caption("Erro ao processar metadados")
+            with col_id:
+                st.markdown(f"**#{row['conversation_display_id']}**")
+
+            with col_nome:
+                st.markdown(row['contact_name'])
+
+            with col_tel:
+                st.markdown(f"`{row['contact_phone']}`")
+
+            with col_tipo:
+                st.markdown(row['tipo_badge'])
+
+            with col_inativ:
+                st.markdown(row['inatividade_formatada'])
+
+            with col_score:
+                st.markdown(f"**{row['score_visual']}**/5")
+
+        st.divider()
+
+        # === CONTROLES DE PAGINAÇÃO ===
+        col_info, col_nav = st.columns([3, 2])
+
+        with col_info:
+            start_record = offset + 1
+            end_record = min(offset + LEADS_PER_PAGE, total_leads)
+            st.info(f"📊 Mostrando **{start_record}-{end_record}** de **{total_leads}** leads | Página **{st.session_state.remarketing_page}** de **{total_pages}**")
+
+        with col_nav:
+            col_prev, col_page_input, col_next = st.columns([1, 2, 1])
+
+            with col_prev:
+                if st.button("◀️ Anterior", disabled=(st.session_state.remarketing_page == 1), use_container_width=True, key="remarketing_prev"):
+                    st.session_state.remarketing_page -= 1
+                    st.rerun()
+
+            with col_page_input:
+                page_input = st.number_input(
+                    "Página de remarketing",
+                    min_value=1,
+                    max_value=total_pages,
+                    value=st.session_state.remarketing_page,
+                    step=1,
+                    key="remarketing_page_input",
+                    label_visibility="collapsed",
+                    help="Ir para página específica"
+                )
+                if page_input != st.session_state.remarketing_page:
+                    st.session_state.remarketing_page = page_input
+                    st.rerun()
+
+            with col_next:
+                if st.button("Próximo ▶️", disabled=(st.session_state.remarketing_page >= total_pages), use_container_width=True, key="remarketing_next"):
+                    st.session_state.remarketing_page += 1
+                    st.rerun()
+
+    # ========================================
+    # ABA 2: ANÁLISE DETALHADA
+    # ========================================
+    with tab2:
+        st.info(f"📋 Mostrando análise detalhada dos **{len(leads_paginated)}** leads da página atual")
+
+        for idx, row in leads_paginated.iterrows():
+            with st.expander(
+                f"💬 {row['contact_name']} (ID: #{row['conversation_display_id']}) - Score: {row['score_visual']}/5",
+                expanded=False
+            ):
+                col_info, col_score = st.columns([3, 1])
+
+                with col_info:
+                    st.markdown(f"**📞 Telefone:** {row['contact_phone']}")
+                    st.markdown(f"**⏰ Inatividade:** {row['inatividade_formatada']}")
+                    st.markdown(f"**🎯 Tipo:** {row['tipo_badge']}")
+
+                with col_score:
+                    st.markdown(f"**⭐ Score:** {row['score_visual']}/5")
+                    if pd.notna(row['analisado_em']):
+                        st.caption(f"Analisado em: {row['analisado_em'].strftime('%d/%m %H:%M')}")
+
+                st.divider()
+
+                # Análise IA
+                if pd.notna(row['analise_ia']):
+                    st.markdown("**📝 Análise da IA:**")
+                    st.info(row['analise_ia'])
+
+                # Dados extraídos
+                if pd.notna(row['dados_extraidos_ia']):
+                    st.markdown("**📊 Dados Extraídos da Conversa:**")
+                    import json
+                    try:
+                        dados = json.loads(row['dados_extraidos_ia']) if isinstance(row['dados_extraidos_ia'], str) else row['dados_extraidos_ia']
+
+                        col_d1, col_d2 = st.columns(2)
+                        with col_d1:
+                            st.markdown(f"- **Interesse mencionado:** {dados.get('interesse_mencionado', 'Não mencionado')}")
+                            st.markdown(f"- **Nível de urgência:** {dados.get('urgencia', 'Não mencionado')}")
+                        with col_d2:
+                            objecoes = dados.get('objecoes', [])
+                            st.markdown(f"- **Objeções levantadas:** {', '.join(objecoes) if objecoes else 'Nenhuma'}")
+                    except:
+                        st.caption("⚠️ Erro ao processar dados extraídos")
+
+                # Sugestão de disparo
+                if pd.notna(row['sugestao_disparo']):
+                    st.markdown("**💬 Sugestão de Mensagem de Remarketing:**")
+                    st.success(row['sugestao_disparo'])
+
+                    # Botões de ação individual
+                    col_copy, col_send = st.columns(2)
+
+                    with col_copy:
+                        st.button(
+                            "📋 Copiar Sugestão",
+                            key=f"copy_sugestao_{row['conversation_id']}",
+                            disabled=True,
+                            use_container_width=True,
+                            help="Em breve: Copiar sugestão para clipboard"
+                        )
+
+                    with col_send:
+                        st.button(
+                            "📤 Disparar para este Lead",
+                            key=f"send_individual_{row['conversation_id']}",
+                            disabled=True,
+                            use_container_width=True,
+                            help="Em breve: Disparar mensagem diretamente para este lead"
+                        )
+
+                # Metadados (tokens e custo)
+                if pd.notna(row['metadados_analise_ia']):
+                    st.markdown("---")
+                    st.markdown("**📊 Metadados da Análise:**")
+                    try:
+                        metadados = json.loads(row['metadados_analise_ia']) if isinstance(row['metadados_analise_ia'], str) else row['metadados_analise_ia']
+
+                        col_m1, col_m2, col_m3 = st.columns(3)
+                        with col_m1:
+                            st.metric("Tokens Usados", format_number(metadados.get('tokens_total', 0)))
+                        with col_m2:
+                            custo = metadados.get('custo_brl', 0)
+                            st.metric("Custo", f"R$ {custo:.4f}")
+                        with col_m3:
+                            st.metric("Modelo", metadados.get('modelo', 'N/A'))
+                    except:
+                        st.caption("⚠️ Erro ao processar metadados")
+
+    # ========================================
+    # ABA 3: DISPARO
+    # ========================================
+    with tab3:
+        st.markdown("### 📤 Envio de Mensagens de Remarketing")
+
+        num_selected = len(st.session_state.selected_remarketing_leads)
+
+        # Info sobre seleção
+        if num_selected > 0:
+            st.success(f"✅ **{num_selected}** lead(s) selecionado(s) na tabela (todas as páginas)")
+        else:
+            st.warning("⚠️ Nenhum lead selecionado. Volte para a aba **Tabela de Leads** para selecionar leads.")
+
+        st.divider()
+
+        # Botões de disparo
+        st.markdown("#### Opções de Disparo:")
+
+        col_btn1, col_btn2 = st.columns(2)
+
+        with col_btn1:
+            st.button(
+                f"📤 Disparar para {num_selected} Selecionado(s)",
+                use_container_width=True,
+                disabled=True,
+                help=f"Em breve: Disparar mensagens para os {num_selected} lead(s) selecionado(s) na tabela"
+            )
+
+        with col_btn2:
+            st.button(
+                f"📤 Disparar para TODOS ({total_leads})",
+                use_container_width=True,
+                disabled=True,
+                help=f"Em breve: Disparar mensagens para TODOS os {total_leads} leads analisados (com confirmação)"
+            )
+
+        st.divider()
+
+        # Gerenciar seleção
+        st.markdown("#### Gerenciar Seleção:")
+
+        col_clear, col_info_disp = st.columns([1, 3])
+
+        with col_clear:
+            if st.button("🗑️ Limpar Seleção", use_container_width=True):
+                st.session_state.selected_remarketing_leads = set()
+                st.rerun()
+
+        with col_info_disp:
+            if num_selected > 0:
+                st.caption(f"💡 Use este botão para limpar os {num_selected} lead(s) selecionado(s)")
+            else:
+                st.caption("ℹ️ Selecione leads na aba **Tabela de Leads** antes de disparar")
+
+        st.divider()
+
+        # Informações adicionais
+        st.markdown("#### ℹ️ Sobre o Disparo:")
+        st.info("""
+        **Como funciona:**
+        1. Selecione os leads desejados na aba **Tabela de Leads** usando os checkboxes
+        2. Volte para esta aba e escolha a opção de disparo
+        3. As mensagens sugeridas pela IA serão enviadas automaticamente via WhatsApp
+
+        **Status:** Esta funcionalidade será implementada em breve por Hyago
+        """)
 
 
 # ============================================================================

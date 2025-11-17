@@ -29,7 +29,29 @@ from datetime import datetime
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
+from openai import OpenAI
+
 from .analyzers.openai_lead_remarketing_analyzer import OpenAILeadRemarketingAnalyzer
+
+
+def validate_openai_api_key(api_key: str) -> bool:
+    """
+    Valida API key da OpenAI fazendo uma chamada simples.
+
+    Args:
+        api_key: Chave da API OpenAI
+
+    Returns:
+        True se a chave for válida, False caso contrário
+    """
+    try:
+        client = OpenAI(api_key=api_key)
+        # Chamada barata apenas para validar autenticação
+        client.models.list()
+        return True
+    except Exception as e:
+        logger.error(f"❌ API Key OpenAI inválida ou expirada: {e}")
+        return False
 
 
 class DecimalEncoder(json.JSONEncoder):
@@ -96,7 +118,17 @@ def detect_and_reset_reopened_conversations(
         Número de conversas resetadas
     """
     query = text("""
-        UPDATE conversations_analytics
+        WITH conversas_a_resetar AS (
+            SELECT conversation_id
+            FROM conversations_analytics
+            WHERE
+                tenant_id = :tenant_id
+                AND analise_ia IS NOT NULL                           -- Tinha análise
+                AND mc_last_message_at > analisado_em                -- Nova msg após análise
+                AND mc_last_message_at > NOW() - INTERVAL '24 hours' -- Msg recente (<24h)
+            FOR UPDATE SKIP LOCKED                                   -- Previne race condition
+        )
+        UPDATE conversations_analytics ca
         SET
             analise_ia = NULL,
             sugestao_disparo = NULL,
@@ -105,16 +137,13 @@ def detect_and_reset_reopened_conversations(
             dados_extraidos_ia = NULL,
             analisado_em = NULL,
             metadados_analise_ia = jsonb_set(
-                COALESCE(metadados_analise_ia, '{}'::jsonb),
+                COALESCE(ca.metadados_analise_ia, '{}'::jsonb),
                 '{resetado_em}',
                 to_jsonb(NOW())
             )
-        WHERE
-            tenant_id = :tenant_id
-            AND analise_ia IS NOT NULL                           -- Tinha análise
-            AND mc_last_message_at > analisado_em                -- Nova msg após análise
-            AND mc_last_message_at > NOW() - INTERVAL '24 hours' -- Msg recente (<24h)
-        RETURNING conversation_id
+        FROM conversas_a_resetar car
+        WHERE ca.conversation_id = car.conversation_id
+        RETURNING ca.conversation_id
     """)
 
     with local_engine.connect() as conn:
@@ -184,6 +213,20 @@ def analyze_inactive_leads(
             'total_tokens': 0,
             'total_cost_brl': 0.0,
             'skipped': True
+        }
+
+    # Validar API key ANTES de processar leads
+    if not validate_openai_api_key(api_key):
+        logger.error(
+            "⏭️  Análise de leads CANCELADA: OPENAI_API_KEY inválida ou expirada"
+        )
+        return {
+            'analyzed_count': 0,
+            'failed_count': 0,
+            'total_tokens': 0,
+            'total_cost_brl': 0.0,
+            'skipped': True,
+            'error': 'invalid_api_key'
         }
 
     logger.info("FASE 4: ANALYZE INACTIVE LEADS (24h+)")
