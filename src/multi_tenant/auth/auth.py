@@ -59,6 +59,51 @@ def get_database_engine() -> Engine:
     return engine
 
 
+def get_etl_engine() -> Engine:
+    """
+    Retorna engine SQLAlchemy para processos ETL - BYPASS RLS
+
+    Este engine conecta com o usuário 'johan_geniai' (role: etl_service)
+    que tem políticas RLS com USING (TRUE), permitindo acesso total
+    aos dados SEM necessidade de configurar contexto RLS.
+
+    USO:
+    - Processos ETL (sincronização, consolidação, análise)
+    - Scripts de manutenção
+    - Background jobs
+    - Qualquer operação que precise acessar dados de múltiplos tenants
+
+    NÃO USE:
+    - No Streamlit/Dashboard (use get_database_engine())
+    - Em endpoints expostos ao usuário final
+
+    Returns:
+        Engine: SQLAlchemy engine com permissões ETL
+    """
+    # Credenciais ETL (usuário johan_geniai com role etl_service)
+    db_host = os.getenv('LOCAL_DB_HOST', 'localhost')
+    db_port = os.getenv('LOCAL_DB_PORT', '5432')
+    db_name = os.getenv('LOCAL_DB_NAME', 'geniai_analytics')
+    db_user = 'johan_geniai'  # Role: etl_service (bypass RLS)
+    db_password = 'vlVMVM6UNz2yYSBlzodPjQvZh'
+
+    # Connection string
+    from urllib.parse import quote_plus
+    password_encoded = quote_plus(db_password)
+    database_url = f"postgresql://{db_user}:{password_encoded}@{db_host}:{db_port}/{db_name}"
+
+    # Criar engine
+    engine = create_engine(
+        database_url,
+        pool_size=10,  # ETL pode precisar de mais conexões
+        max_overflow=20,
+        pool_pre_ping=True,
+        echo=False
+    )
+
+    return engine
+
+
 # ============================================================================
 # AUTENTICAÇÃO
 # ============================================================================

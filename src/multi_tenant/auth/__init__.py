@@ -8,6 +8,7 @@ from .auth import (
     validate_session,
     logout_user,
     get_database_engine,
+    get_etl_engine,
 )
 
 from .middleware import (
@@ -20,6 +21,7 @@ __all__ = [
     'validate_session',
     'logout_user',
     'get_database_engine',
+    'get_etl_engine',
     'require_authentication',
     'set_rls_context',
 ]
