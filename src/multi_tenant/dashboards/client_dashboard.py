@@ -77,10 +77,15 @@ def load_conversations(tenant_id, date_start=None, date_end=None, inbox_filter=N
             nome_mapeado_bot,
             mc_first_message_at as primeiro_contato,
             mc_last_message_at as ultimo_contato,
-            message_compiled as conversa_compilada
-            -- REMOVIDO: Colunas AllpFit-específicas (condicao_fisica, objetivo, analise_ia, sugestao_disparo, probabilidade_conversao)
-            -- Motivo: Não aplicáveis a outros segmentos (educação, financeiro, etc.)
-            -- Data: 2025-11-11 (pós-apresentação aos superiores)
+            message_compiled as conversa_compilada,
+            -- FASE 8: Colunas de Análise de Remarketing
+            tipo_conversa,
+            analise_ia,
+            sugestao_disparo,
+            score_prioridade,
+            dados_extraidos_ia,
+            metadados_analise_ia,
+            analisado_em
         FROM conversations_analytics
         WHERE 1=1
     """
@@ -1711,6 +1716,344 @@ def render_leads_table(df, df_original, tenant_name, date_start, date_end):
 
 
 # ============================================================================
+# ANÁLISE DE REMARKETING [FASE 8]
+# ============================================================================
+
+def calculate_inactivity_hours(ultimo_contato):
+    """
+    Calcula horas de inatividade desde última mensagem
+
+    Args:
+        ultimo_contato: Timestamp da última mensagem
+
+    Returns:
+        float: Horas de inatividade (ou None se não disponível)
+    """
+    if pd.isna(ultimo_contato):
+        return None
+
+    now = datetime.now()
+    if isinstance(ultimo_contato, str):
+        ultimo_contato = pd.to_datetime(ultimo_contato)
+
+    delta = now - ultimo_contato
+    return delta.total_seconds() / 3600
+
+
+def format_inactivity_time(horas):
+    """
+    Formata tempo de inatividade de forma legível
+
+    Args:
+        horas: Horas de inatividade
+
+    Returns:
+        str: Tempo formatado (ex: "2d 5h", "1sem")
+    """
+    if pd.isna(horas) or horas is None:
+        return "-"
+
+    if horas < 24:
+        return f"{int(horas)}h"
+    elif horas < 168:  # < 7 dias
+        dias = int(horas // 24)
+        horas_rest = int(horas % 24)
+        return f"{dias}d {horas_rest}h"
+    elif horas < 720:  # < 30 dias
+        semanas = int(horas // 168)
+        return f"{semanas}sem"
+    else:  # 30+ dias
+        meses = int(horas // 720)
+        return f"{meses}mes"
+
+
+def get_remarketing_status_badge(row):
+    """
+    Retorna badge de status de análise de remarketing
+
+    Args:
+        row: Linha do DataFrame com dados do lead
+
+    Returns:
+        str: Badge formatado
+    """
+    # Lead com análise completa
+    if pd.notna(row.get('analisado_em')):
+        return '✅ Analisado'
+
+    # Calcular horas de inatividade
+    horas_inativo = calculate_inactivity_hours(row.get('ultimo_contato'))
+
+    if horas_inativo is None:
+        return '⚠️ Sem data'
+
+    # Lead inativo 24h+ (aguardando análise)
+    if horas_inativo >= 24:
+        return '⏳ Aguardando Análise'
+
+    # Lead ativo (<24h)
+    horas_restantes = int(24 - horas_inativo)
+    return f'🔄 Ativo (análise em {horas_restantes}h)'
+
+
+def format_tipo_remarketing_badge(tipo):
+    """
+    Formata tipo de remarketing como badge colorido
+
+    Args:
+        tipo: Tipo de remarketing
+
+    Returns:
+        str: Badge formatado
+    """
+    badges = {
+        'REMARKETING_RECENTE': '🟢 Recente (24-48h)',
+        'REMARKETING_MEDIO': '🟡 Médio (48h-7d)',
+        'REMARKETING_FRIO': '🔴 Frio (7d+)',
+    }
+    return badges.get(tipo, '-')
+
+
+def format_score_stars(score):
+    """
+    Formata score de prioridade como estrelas
+
+    Args:
+        score: Score de 0 a 5
+
+    Returns:
+        str: Estrelas formatadas
+    """
+    if pd.isna(score) or score is None:
+        return '-'
+
+    score = int(score)
+    if score < 0 or score > 5:
+        return '-'
+
+    return '⭐' * score if score > 0 else '☆'
+
+
+def render_remarketing_analysis_section(df, tenant_id):
+    """
+    Renderiza seção de Análise de Remarketing (FASE 8)
+
+    Mostra:
+    - Cards de resumo (Analisados, Aguardando 24h, Ativos)
+    - Filtro por tipo de remarketing
+    - Tabela com Status, Tipo, Nome, Inatividade, Score
+    - Expanders com análise completa + sugestão
+    - Botão "Analisar Pendentes (24h+)"
+
+    Args:
+        df: DataFrame com conversas (já filtrado)
+        tenant_id: ID do tenant
+    """
+    st.subheader("🤖 Análise de Remarketing (Leads Inativos 24h+)")
+
+    if df.empty:
+        st.info("ℹ️ Nenhum dado disponível para análise de remarketing")
+        return
+
+    # Filtrar apenas leads
+    leads_df = df[df['is_lead'] == True].copy()
+
+    if leads_df.empty:
+        st.info("ℹ️ Nenhum lead encontrado no período selecionado")
+        return
+
+    # Calcular tempo de inatividade para todos os leads
+    leads_df['horas_inativo'] = leads_df['ultimo_contato'].apply(calculate_inactivity_hours)
+
+    # Classificar leads
+    analisados = len(leads_df[leads_df['analisado_em'].notna()])
+    aguardando_24h = len(leads_df[(leads_df['horas_inativo'] >= 24) & (leads_df['analisado_em'].isna())])
+    ativos = len(leads_df[leads_df['horas_inativo'] < 24])
+
+    # === CARDS DE RESUMO ===
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.metric(
+            "✅ Analisados",
+            format_number(analisados),
+            help="Leads inativos 24h+ com análise de remarketing"
+        )
+
+    with col2:
+        st.metric(
+            "⏳ Aguardando 24h",
+            format_number(aguardando_24h),
+            help="Leads inativos 24h+ sem análise (serão analisados no próximo ETL)"
+        )
+
+    with col3:
+        st.metric(
+            "🔄 Ativos",
+            format_number(ativos),
+            help="Leads com última msg < 24h (janela de follow-up manual)"
+        )
+
+    st.divider()
+
+    # === FILTRO POR TIPO DE REMARKETING ===
+    col_filter, col_btn = st.columns([3, 2])
+
+    with col_filter:
+        tipo_filter = st.multiselect(
+            "🎯 Filtrar por Tipo de Remarketing:",
+            options=['REMARKETING_RECENTE', 'REMARKETING_MEDIO', 'REMARKETING_FRIO'],
+            default=[],
+            format_func=lambda x: {
+                'REMARKETING_RECENTE': '🟢 Recente (24-48h)',
+                'REMARKETING_MEDIO': '🟡 Médio (48h-7d)',
+                'REMARKETING_FRIO': '🔴 Frio (7d+)'
+            }.get(x, x),
+            key="tipo_remarketing_filter",
+            help="Filtrar leads analisados por tipo de remarketing"
+        )
+
+    with col_btn:
+        # Botão "Analisar Pendentes" (futuro - FASE 8.4)
+        if aguardando_24h > 0:
+            st.button(
+                f"🤖 Analisar {aguardando_24h} Pendentes (24h+)",
+                use_container_width=True,
+                disabled=True,
+                help="Em breve: Análise sob demanda de leads pendentes"
+            )
+        else:
+            st.success("✅ Todos os leads inativos (24h+) foram analisados!")
+
+    st.divider()
+
+    # === APLICAR FILTRO ===
+    leads_display = leads_df.copy()
+    if tipo_filter:
+        leads_display = leads_display[leads_display['tipo_conversa'].isin(tipo_filter)]
+
+    # === TABELA DE LEADS COM ANÁLISE ===
+    st.markdown("#### 📋 Leads com Análise de Remarketing")
+
+    # Filtrar apenas leads analisados
+    leads_analisados = leads_display[leads_display['analisado_em'].notna()].copy()
+
+    if leads_analisados.empty:
+        st.info("ℹ️ Nenhum lead analisado encontrado")
+        return
+
+    # Adicionar colunas formatadas
+    leads_analisados['status_badge'] = leads_analisados.apply(get_remarketing_status_badge, axis=1)
+    leads_analisados['tipo_badge'] = leads_analisados['tipo_conversa'].apply(format_tipo_remarketing_badge)
+    leads_analisados['inatividade_formatada'] = leads_analisados['horas_inativo'].apply(format_inactivity_time)
+    leads_analisados['score_visual'] = leads_analisados['score_prioridade'].apply(format_score_stars)
+
+    # Preparar DataFrame para exibição
+    display_remarketing = leads_analisados[[
+        'conversation_display_id',
+        'contact_name',
+        'contact_phone',
+        'status_badge',
+        'tipo_badge',
+        'inatividade_formatada',
+        'score_visual'
+    ]].copy()
+
+    display_remarketing.columns = [
+        'ID',
+        'Nome',
+        'Telefone',
+        'Status',
+        'Tipo Remarketing',
+        'Inatividade',
+        'Score'
+    ]
+
+    # Exibir tabela
+    st.dataframe(
+        display_remarketing,
+        use_container_width=True,
+        hide_index=True,
+        height=400
+    )
+
+    st.divider()
+
+    # === EXPANDERS COM ANÁLISE DETALHADA ===
+    st.markdown("#### 🔍 Análise Detalhada (Expanders)")
+
+    for idx, row in leads_analisados.head(10).iterrows():
+        with st.expander(
+            f"💬 {row['contact_name']} (ID: {row['conversation_display_id']}) - {row['tipo_badge']}"
+        ):
+            col_info, col_score = st.columns([3, 1])
+
+            with col_info:
+                st.markdown(f"**📞 Telefone:** {row['contact_phone']}")
+                st.markdown(f"**⏰ Inatividade:** {row['inatividade_formatada']}")
+                st.markdown(f"**📊 Status:** {row['status_badge']}")
+
+            with col_score:
+                st.markdown(f"**⭐ Score:** {row['score_visual']}")
+                if pd.notna(row['analisado_em']):
+                    st.caption(f"Analisado: {row['analisado_em'].strftime('%d/%m/%Y %H:%M')}")
+
+            st.divider()
+
+            # Análise IA
+            if pd.notna(row['analise_ia']):
+                st.markdown("**📝 Análise IA:**")
+                st.info(row['analise_ia'])
+
+            # Dados extraídos
+            if pd.notna(row['dados_extraidos_ia']):
+                st.markdown("**📊 Dados Extraídos:**")
+                import json
+                try:
+                    dados = json.loads(row['dados_extraidos_ia']) if isinstance(row['dados_extraidos_ia'], str) else row['dados_extraidos_ia']
+
+                    col_d1, col_d2 = st.columns(2)
+                    with col_d1:
+                        st.markdown(f"- **Interesse:** {dados.get('interesse_mencionado', 'N/A')}")
+                        st.markdown(f"- **Urgência:** {dados.get('urgencia', 'N/A')}")
+                    with col_d2:
+                        objecoes = dados.get('objecoes', [])
+                        st.markdown(f"- **Objeções:** {', '.join(objecoes) if objecoes else 'Nenhuma'}")
+                except:
+                    st.caption("Erro ao processar dados extraídos")
+
+            # Sugestão de disparo
+            if pd.notna(row['sugestao_disparo']):
+                st.markdown("**💬 Sugestão de Mensagem de Remarketing:**")
+                st.success(row['sugestao_disparo'])
+
+                # Botão copiar (futuro - FASE 8.4)
+                st.button(
+                    "📋 Copiar Sugestão",
+                    key=f"copy_sugestao_{row['conversation_id']}",
+                    disabled=True,
+                    help="Em breve: Copiar sugestão para clipboard"
+                )
+
+            # Metadados (tokens e custo)
+            if pd.notna(row['metadados_analise_ia']):
+                st.markdown("**📊 Metadados da Análise:**")
+                try:
+                    metadados = json.loads(row['metadados_analise_ia']) if isinstance(row['metadados_analise_ia'], str) else row['metadados_analise_ia']
+
+                    col_m1, col_m2, col_m3 = st.columns(3)
+                    with col_m1:
+                        st.metric("Tokens", metadados.get('tokens_total', 0))
+                    with col_m2:
+                        custo = metadados.get('custo_brl', 0)
+                        st.metric("Custo", f"R$ {custo:.4f}")
+                    with col_m3:
+                        st.caption(f"Modelo: {metadados.get('modelo', 'N/A')}")
+                except:
+                    st.caption("Erro ao processar metadados")
+
+
+# ============================================================================
 # TELA PRINCIPAL
 # ============================================================================
 
@@ -1940,6 +2283,11 @@ def show_client_dashboard(session, tenant_id=None):
 
     # === TABELA DE LEADS ===
     render_leads_table(df, df_original, tenant_name, date_start, date_end)
+
+    st.divider()
+
+    # === ANÁLISE DE REMARKETING === [FASE 8 - NOVO]
+    render_remarketing_analysis_section(df, display_tenant_id)
 
     st.divider()
 

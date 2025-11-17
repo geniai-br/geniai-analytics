@@ -103,7 +103,7 @@ fi
 echo "   📊 Streamlit iniciando em background..."
 
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-nohup venv/bin/streamlit run src/multi_tenant/dashboards/app.py \
+nohup venv/bin/python3 -m streamlit run src/multi_tenant/dashboards/app.py \
     --server.port=8504 \
     --server.headless=true \
     --server.address=0.0.0.0 \
