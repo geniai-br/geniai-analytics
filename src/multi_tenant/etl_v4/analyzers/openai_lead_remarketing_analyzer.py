@@ -31,6 +31,10 @@ from decimal import Decimal
 from openai import OpenAI
 from openai.types.chat import ChatCompletion
 
+# Importar Rate Limiter e Cost Tracker (FASE 9.1)
+from src.multi_tenant.utils.rate_limiter import get_rate_limiter
+from src.multi_tenant.utils.cost_tracker import get_cost_tracker
+
 # Configurar logging
 logging.basicConfig(
     level=logging.INFO,
@@ -284,6 +288,29 @@ ANALISE A CONVERSA E RETORNE O JSON COM OS DADOS ESTRUTURADOS.
             f"Tipo: {tipo_remarketing} | Inativo: {tempo_inativo_horas:.1f}h"
         )
 
+        # [FASE 9.1] Obter instâncias globais de Rate Limiter e Cost Tracker
+        rate_limiter = get_rate_limiter()
+        cost_tracker = get_cost_tracker()
+
+        # [FASE 9.1] Verificar se pode gastar (estimativa conservadora)
+        estimated_tokens = 600  # Estimativa média baseada em histórico
+        estimated_cost = self._calculate_cost(estimated_tokens // 2, estimated_tokens // 2)
+
+        can_spend, spend_reason = cost_tracker.can_spend(
+            tenant_id=self.tenant_id,
+            estimated_cost=estimated_cost,
+            check_type='all'
+        )
+
+        if not can_spend:
+            logger.warning(f"❌ Análise bloqueada por threshold de custo: {spend_reason}")
+            raise Exception(f"Cost threshold exceeded: {spend_reason}")
+
+        # [FASE 9.1] Aguardar rate limit se necessário (max 60s)
+        if not rate_limiter.wait_if_needed(estimated_tokens=estimated_tokens, max_wait=60):
+            logger.error(f"❌ Rate limit timeout para lead {conversation_id}")
+            raise Exception("Rate limit timeout - try again later")
+
         # Construir prompts
         system_prompt = self._build_system_prompt(tipo_remarketing)
         user_prompt = self._build_user_prompt(
@@ -357,6 +384,15 @@ ANALISE A CONVERSA E RETORNE O JSON COM OS DADOS ESTRUTURADOS.
                 self.stats['successful_calls'] += 1
                 self.stats['total_tokens'] += tokens_total
                 self.stats['total_cost_brl'] += custo_brl
+
+                # [FASE 9.1] Registrar custo real e uso de rate limit
+                rate_limiter.record_request(tokens_total)
+                cost_tracker.record_cost(
+                    tenant_id=self.tenant_id,
+                    cost_brl=custo_brl,
+                    tokens=tokens_total,
+                    requests=1
+                )
 
                 # Montar resultado
                 resultado = {
