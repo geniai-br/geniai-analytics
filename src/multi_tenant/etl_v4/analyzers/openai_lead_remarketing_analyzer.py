@@ -168,6 +168,7 @@ Tipo de Análise: {tipo_descricao.get(tipo_remarketing, 'Indefinido')}
 Sua tarefa é analisar a conversa completa entre o lead e a empresa e extrair informações estruturadas em formato JSON:
 
 {{
+  "nome_completo": "string - nome COMPLETO do lead mencionado durante a conversa (procure quando o bot/atendente pergunta o nome) ou 'Não mencionado'",
   "interesse_mencionado": "string - principal interesse/necessidade mencionado pelo lead ou 'Não mencionado'",
   "objecoes": ["lista de objeções/barreiras identificadas (ex: 'Preço', 'Prazo', 'Dúvidas técnicas') ou lista vazia"],
   "urgencia": "string - urgência percebida: 'Alta' | 'Média' | 'Baixa'",
@@ -221,9 +222,17 @@ RETORNE APENAS O JSON, sem texto adicional."""
         # Formatar mensagens para contexto
         mensagens_formatadas = []
         for msg in mensagens:
-            sender = msg.get('sender_type', 'Desconhecido')
-            content = msg.get('content', '')
-            timestamp = msg.get('created_at', '')
+            # Usar campos corretos do JSON: 'sender' e 'text'
+            sender = msg.get('sender', 'System')
+            content = msg.get('text', '')
+
+            # Pular mensagens sem conteúdo (system messages, nulls, etc)
+            if not content or content.strip() == '':
+                continue
+
+            # Pular mensagens de sistema que não agregam valor
+            if sender is None or sender == 'null':
+                continue
 
             # Limitar tamanho da mensagem (evitar prompt muito grande)
             if len(content) > 500:
@@ -231,7 +240,7 @@ RETORNE APENAS O JSON, sem texto adicional."""
 
             mensagens_formatadas.append(f"[{sender}] {content}")
 
-        conversa_texto = "\n".join(mensagens_formatadas[:20])  # Limitar a 20 mensagens
+        conversa_texto = "\n".join(mensagens_formatadas[:30])  # Limitar a 30 mensagens úteis
 
         return f"""
 DADOS DO LEAD:

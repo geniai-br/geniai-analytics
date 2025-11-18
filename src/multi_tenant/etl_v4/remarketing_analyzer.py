@@ -173,11 +173,14 @@ def analyze_inactive_leads(
     """
     FASE 4: Analisa leads inativos 24h+ usando OpenAI.
 
-    Query inteligente:
-    - WHERE is_lead = true
-    - AND analise_ia IS NULL
-    - AND mc_last_message_at < NOW() - INTERVAL '24 hours' (CHAVE!)
-    - AND contact_messages_count >= 3
+    Query inteligente (otimizada):
+    - WHERE is_lead = true                                   (apenas leads qualificados por regex)
+    - AND tipo_conversa IS NULL                              (pendentes de análise)
+    - AND mc_last_message_at < NOW() - INTERVAL '24 hours'   (REGRA: 24h de inatividade)
+    - AND message_compiled IS NOT NULL                       (tem conversa compilada)
+
+    Filtros Python (após query):
+    - has_bot_or_agent_response() -> pula se não tem resposta do bot/agente
 
     Args:
         local_engine: Engine do banco local
@@ -241,18 +244,17 @@ def analyze_inactive_leads(
             display_id,
             message_compiled,
             contact_name,
-            inbox_name,
+            account_name,
             contact_messages_count,
             mc_last_message_at,
             EXTRACT(EPOCH FROM (NOW() - mc_last_message_at)) / 3600 AS horas_inativo
         FROM conversations_analytics
         WHERE
             tenant_id = :tenant_id
-            AND is_lead = true
-            AND tipo_conversa IS NULL                            -- Campo NOVO de remarketing
-            AND mc_last_message_at < NOW() - INTERVAL '24 hours'
-            AND contact_messages_count >= 3
-            AND message_compiled IS NOT NULL
+            AND is_lead = true                                   -- Apenas leads qualificados
+            AND tipo_conversa IS NULL                            -- Pendentes de análise
+            AND mc_last_message_at < NOW() - INTERVAL '24 hours' -- REGRA: 24h de inatividade
+            AND message_compiled IS NOT NULL                     -- Tem conversa compilada
         ORDER BY mc_last_message_at ASC
         LIMIT :limit
     """)
@@ -297,6 +299,17 @@ def analyze_inactive_leads(
                     f"⏭️  Lead #{lead['display_id']} PULADO: "
                     f"Sem resposta do bot/agente (apenas {lead['contact_messages_count']} msgs do contato)"
                 )
+
+                # Marcar no banco para não reprocessar
+                with local_engine.connect() as conn:
+                    conn.execute(text("""
+                        UPDATE conversations_analytics
+                        SET tipo_conversa = 'SKIP_NO_RESPONSE',
+                            analise_ia = 'Pulado: conversa sem resposta do bot/agente'
+                        WHERE conversation_id = :conversation_id
+                    """), {'conversation_id': lead['conversation_id']})
+                    conn.commit()
+
                 continue
 
             # Verificar limite de custo
@@ -317,7 +330,7 @@ def analyze_inactive_leads(
                 conversation_id=lead['conversation_id'],
                 conversa_compilada=lead['message_compiled'],
                 contact_name=lead['contact_name'] or 'Cliente',
-                inbox_name=lead['inbox_name'] or 'Equipe',
+                inbox_name=lead['account_name'] or 'Equipe',
                 tipo_remarketing=tipo_remarketing,
                 tempo_inativo_horas=lead['horas_inativo']
             )
@@ -382,11 +395,18 @@ def save_analysis_to_db(
             analise_ia = :analise_ia,
             sugestao_disparo = :sugestao_disparo,
             score_prioridade = :score_prioridade,
+            nome_mapeado_bot = :nome_mapeado_bot,
             dados_extraidos_ia = cast(:dados_extraidos_ia as jsonb),
             metadados_analise_ia = cast(:metadados_analise_ia as jsonb),
             analisado_em = :analisado_em
         WHERE conversation_id = :conversation_id
     """)
+
+    # Extrair nome_completo do JSON da IA
+    nome_mapeado = resultado['dados_extraidos_ia'].get('nome_completo', 'Não mencionado')
+    # Se não foi mencionado, manter vazio (não poluir com "Não mencionado")
+    if nome_mapeado == 'Não mencionado':
+        nome_mapeado = ''
 
     with local_engine.connect() as conn:
         conn.execute(query, {
@@ -395,6 +415,7 @@ def save_analysis_to_db(
             'analise_ia': resultado['analise_ia'],
             'sugestao_disparo': resultado['sugestao_disparo'],
             'score_prioridade': resultado['score_prioridade'],
+            'nome_mapeado_bot': nome_mapeado,
             'dados_extraidos_ia': json.dumps(resultado['dados_extraidos_ia'], cls=DecimalEncoder),
             'metadados_analise_ia': json.dumps(resultado['metadados_analise_ia'], cls=DecimalEncoder),
             'analisado_em': resultado['analisado_em']
