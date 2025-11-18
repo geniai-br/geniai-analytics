@@ -1,5 +1,12 @@
 #!/bin/bash
-export OPENAI_API_KEY='***REMOVED***'
+
+# Verificar se OPENAI_API_KEY está configurada
+if [ -z "$OPENAI_API_KEY" ]; then
+    echo "❌ ERRO: OPENAI_API_KEY não configurada!"
+    echo "Configure com: export OPENAI_API_KEY='sua-chave-aqui'"
+    echo "Ou adicione no arquivo .env na raiz do projeto"
+    exit 1
+fi
 
 # Diretório do projeto (assumindo que o script está em scripts/analysis/)
 PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
