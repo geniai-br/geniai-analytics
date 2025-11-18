@@ -28,7 +28,7 @@ import os
 from pathlib import Path
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
-from threading import Lock
+from threading import RLock
 
 # Configurar logging
 logging.basicConfig(
@@ -49,7 +49,7 @@ class RateLimiter:
     # Limites OpenAI Tier 1 (conservadores - 80% dos oficiais)
     DEFAULT_RPM_LIMIT = 400      # 80% de 500 RPM
     DEFAULT_TPM_LIMIT = 24000    # 80% de 30,000 TPM
-    DEFAULT_RPD_LIMIT = 160      # 80% de 200 RPD
+    DEFAULT_RPD_LIMIT = 1000     # Aumentado para 1000 para permitir análise massiva
 
     # Janelas de tempo
     MINUTE_WINDOW = 60           # 60 segundos
@@ -79,8 +79,8 @@ class RateLimiter:
         self.rpd_limit = rpd_limit
         self.state_file = state_file or self.STATE_FILE
 
-        # Thread-safe lock
-        self._lock = Lock()
+        # Thread-safe lock (reentrant para evitar deadlock)
+        self._lock = RLock()
 
         # Estado interno (carregado do arquivo se existir)
         self._state = {
@@ -151,6 +151,36 @@ class RateLimiter:
 
         self._state['last_cleanup'] = now
 
+    def _get_usage_unlocked(self) -> Dict[str, Any]:
+        """
+        Versão interna que NÃO adquire lock. Use apenas quando já tiver o lock!
+        """
+        # Contadores
+        rpm_count = len(self._state['requests_minute'])
+        rpd_count = len(self._state['requests_day'])
+
+        # Tokens na última janela de 1 minuto
+        tpm_count = sum(
+            tokens for _, tokens in self._state['requests_minute']
+        )
+
+        return {
+            'requests_per_minute': rpm_count,
+            'tokens_per_minute': tpm_count,
+            'requests_per_day': rpd_count,
+            'rpm_limit': self.rpm_limit,
+            'tpm_limit': self.tpm_limit,
+            'rpd_limit': self.rpd_limit,
+            'rpm_available': self.rpm_limit - rpm_count,
+            'tpm_available': self.tpm_limit - tpm_count,
+            'rpd_available': self.rpd_limit - rpd_count,
+            'rpm_usage_percent': round((rpm_count / self.rpm_limit) * 100, 1),
+            'tpm_usage_percent': round((tpm_count / self.tpm_limit) * 100, 1),
+            'rpd_usage_percent': round((rpd_count / self.rpd_limit) * 100, 1),
+            'total_requests': self._state['total_requests'],
+            'total_tokens': self._state['total_tokens']
+        }
+
     def get_current_usage(self) -> Dict[str, Any]:
         """
         Retorna uso atual em todas as janelas de tempo.
@@ -160,32 +190,7 @@ class RateLimiter:
         """
         with self._lock:
             self._cleanup_old_requests()
-
-            # Contadores
-            rpm_count = len(self._state['requests_minute'])
-            rpd_count = len(self._state['requests_day'])
-
-            # Tokens na última janela de 1 minuto
-            tpm_count = sum(
-                tokens for _, tokens in self._state['requests_minute']
-            )
-
-            return {
-                'requests_per_minute': rpm_count,
-                'tokens_per_minute': tpm_count,
-                'requests_per_day': rpd_count,
-                'rpm_limit': self.rpm_limit,
-                'tpm_limit': self.tpm_limit,
-                'rpd_limit': self.rpd_limit,
-                'rpm_available': self.rpm_limit - rpm_count,
-                'tpm_available': self.tpm_limit - tpm_count,
-                'rpd_available': self.rpd_limit - rpd_count,
-                'rpm_usage_percent': round((rpm_count / self.rpm_limit) * 100, 1),
-                'tpm_usage_percent': round((tpm_count / self.tpm_limit) * 100, 1),
-                'rpd_usage_percent': round((rpd_count / self.rpd_limit) * 100, 1),
-                'total_requests': self._state['total_requests'],
-                'total_tokens': self._state['total_tokens']
-            }
+            return self._get_usage_unlocked()
 
     def can_make_request(self, estimated_tokens: int = 500) -> tuple[bool, Optional[str]]:
         """
@@ -200,7 +205,7 @@ class RateLimiter:
         with self._lock:
             self._cleanup_old_requests()
 
-            usage = self.get_current_usage()
+            usage = self._get_usage_unlocked()
 
             # Verificar RPM
             if usage['rpm_available'] <= 0:
@@ -238,7 +243,7 @@ class RateLimiter:
             self._save_state()
 
             # Log se próximo dos limites
-            usage = self.get_current_usage()
+            usage = self._get_usage_unlocked()
             if usage['rpm_usage_percent'] > 80:
                 logger.warning(
                     f"RPM usage high: {usage['rpm_usage_percent']}% "
@@ -303,7 +308,8 @@ class RateLimiter:
             String formatada com estatísticas
         """
         with self._lock:
-            usage = self.get_current_usage()
+            self._cleanup_old_requests()
+            usage = self._get_usage_unlocked()
 
             return f"""Rate Limiter Status:
 RPM: {usage['requests_per_minute']:3d}/{self.rpm_limit} ({usage['rpm_usage_percent']:5.1f}%)
