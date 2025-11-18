@@ -429,8 +429,8 @@ if __name__ == "__main__":
     from urllib.parse import quote_plus
 
     # Configurar engine local
-    password = quote_plus("AllpFit2024@Analytics")
-    LOCAL_DB_URL = f"postgresql://isaac:{password}@localhost:5432/geniai_analytics"
+    password = quote_plus("vlVMVM6UNz2yYSBlzodPjQvZh")
+    LOCAL_DB_URL = f"postgresql://johan_geniai:{password}@localhost:5432/geniai_analytics"
     local_engine = create_engine(LOCAL_DB_URL)
 
     # Criar manager

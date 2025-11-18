@@ -27,7 +27,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
 # Adicionar diretório raiz ao path
-sys.path.append('/home/tester/projetos/allpfit-analytics')
+sys.path.append('/home/tester/projetos/geniai-analytics')
 
 # Importar módulos do ETL
 from src.multi_tenant.etl_v4.extractor import RemoteExtractor

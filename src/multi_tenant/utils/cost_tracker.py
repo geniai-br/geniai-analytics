@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 from collections import defaultdict
-from threading import Lock
+from threading import RLock
 
 # Configurar logging
 logging.basicConfig(
@@ -72,7 +72,7 @@ class CostTracker:
         self.state_file = state_file or self.STATE_FILE
 
         # Thread-safe lock
-        self._lock = Lock()
+        self._lock = RLock()  # Reentrant para evitar deadlock
 
         # Estado interno
         # Estrutura: {
