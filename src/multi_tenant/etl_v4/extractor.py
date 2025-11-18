@@ -312,8 +312,8 @@ if __name__ == "__main__":
 
     # Configurar engines (URL encoding para @ na senha)
     from urllib.parse import quote_plus
-    password = quote_plus("AllpFit2024@Analytics")
-    LOCAL_DB_URL = f"postgresql://isaac:{password}@localhost:5432/geniai_analytics"
+    password = quote_plus("vlVMVM6UNz2yYSBlzodPjQvZh")
+    LOCAL_DB_URL = f"postgresql://johan_geniai:{password}@localhost:5432/geniai_analytics"
     local_engine = create_local_engine(LOCAL_DB_URL)
 
     # Criar extractor
