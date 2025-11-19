@@ -1191,6 +1191,7 @@ def prepare_inbox_metrics(df):
     # Métricas agregadas (todas as inboxes juntas)
     total_conversas = len(df)
     total_leads = len(df[df['is_lead'] == True])
+    total_sem_resposta = len(df[(df['is_lead'] == True) & (df['tipo_conversa'] == 'SKIP_NO_RESPONSE')])
     total_visitas = len(df[df['visit_scheduled'] == True])
     total_crm = len(df[df['crm_converted'] == True])
 
@@ -1200,6 +1201,8 @@ def prepare_inbox_metrics(df):
     metrics_agregadas = {
         'total_conversas': total_conversas,
         'total_leads': total_leads,
+        'total_sem_resposta': total_sem_resposta,
+        'taxa_sem_resposta': (total_sem_resposta / total_leads * 100) if total_leads > 0 else 0,
         'total_visitas': total_visitas,
         'total_crm': total_crm,
         'taxa_conversao_leads': (total_leads / total_conversas * 100) if total_conversas > 0 else 0,
@@ -1208,6 +1211,10 @@ def prepare_inbox_metrics(df):
     }
 
     # Métricas por inbox individual
+    # Função customizada para contar sem_resposta
+    def count_sem_resposta(group):
+        return ((group['is_lead'] == True) & (group['tipo_conversa'] == 'SKIP_NO_RESPONSE')).sum()
+
     inbox_groups = df.groupby('inbox_name').agg({
         'conversation_id': 'count',  # Total de conversas
         'is_lead': lambda x: (x == True).sum(),  # Total de leads
@@ -1216,11 +1223,24 @@ def prepare_inbox_metrics(df):
         'first_response_time_minutes': 'mean'  # Tempo médio de resposta
     }).reset_index()
 
-    inbox_groups.columns = ['inbox_name', 'total_conversas', 'total_leads', 'total_visitas', 'total_crm', 'avg_response_time']
+    # Calcular sem_resposta separadamente (precisa acessar múltiplas colunas)
+    sem_resposta_por_inbox = df[df['is_lead'] == True].groupby('inbox_name').apply(
+        lambda x: (x['tipo_conversa'] == 'SKIP_NO_RESPONSE').sum()
+    ).reset_index(name='total_sem_resposta')
+
+    # Merge com inbox_groups
+    inbox_groups = inbox_groups.merge(sem_resposta_por_inbox, on='inbox_name', how='left')
+    inbox_groups['total_sem_resposta'] = inbox_groups['total_sem_resposta'].fillna(0).astype(int)
+
+    inbox_groups.columns = ['inbox_name', 'total_conversas', 'total_leads', 'total_visitas', 'total_crm', 'avg_response_time', 'total_sem_resposta']
 
     # Calcular taxas de conversão
     inbox_groups['taxa_leads'] = inbox_groups.apply(
         lambda row: (row['total_leads'] / row['total_conversas'] * 100) if row['total_conversas'] > 0 else 0,
+        axis=1
+    )
+    inbox_groups['taxa_sem_resposta'] = inbox_groups.apply(
+        lambda row: (row['total_sem_resposta'] / row['total_leads'] * 100) if row['total_leads'] > 0 else 0,
         axis=1
     )
     inbox_groups['taxa_crm'] = inbox_groups.apply(
@@ -1268,8 +1288,8 @@ def render_inbox_analysis(df):
         # === VISÃO AGREGADA ===
         st.markdown("#### 📊 Métricas Consolidadas (Todas as Inboxes)")
 
-        # Métricas principais em 3 colunas (removidas Visitas e CRM)
-        col1, col2, col3 = st.columns(3)
+        # Métricas principais em 4 colunas
+        col1, col2, col3, col4 = st.columns(4)
 
         with col1:
             st.metric(
@@ -1282,7 +1302,6 @@ def render_inbox_analysis(df):
             st.metric(
                 "Total Leads",
                 format_number(metrics_agregadas['total_leads']),
-                delta=f"{metrics_agregadas['taxa_conversao_leads']:.1f}% conversão",
                 help="Leads identificados em todas as inboxes"
             )
 
@@ -1302,6 +1321,13 @@ def render_inbox_analysis(df):
                 "Tempo Médio Resposta",
                 time_str,
                 help="Tempo médio de primeira resposta"
+            )
+
+        with col4:
+            st.metric(
+                "Sem Resposta Bot/Agente",
+                format_number(metrics_agregadas['total_sem_resposta']),
+                help="Leads que nunca receberam resposta do bot ou agente"
             )
 
         st.divider()
@@ -1334,15 +1360,14 @@ def render_inbox_analysis(df):
             st.info("ℹ️ Nenhuma inbox encontrada")
             return
 
-        # Exibir tabela com métricas por inbox
+        # Exibir tabela com métricas por inbox (removidas Visitas e CRM, adicionada Sem Resposta)
         display_inbox = inbox_metrics[[
             'inbox_name',
             'total_conversas',
             'total_leads',
             'taxa_leads',
-            'total_visitas',
-            'total_crm',
-            'taxa_crm',
+            'total_sem_resposta',
+            'taxa_sem_resposta',
             'avg_response_time'
         ]].copy()
 
@@ -1352,15 +1377,14 @@ def render_inbox_analysis(df):
             'Conversas',
             'Leads',
             'Taxa Leads (%)',
-            'Visitas',
-            'CRM',
-            'Taxa CRM (%)',
+            'Sem Resposta',
+            'Taxa Sem Resp. (%)',
             'Tempo Resp. (min)'
         ]
 
         # Formatar colunas
         display_inbox['Taxa Leads (%)'] = display_inbox['Taxa Leads (%)'].apply(lambda x: f"{x:.1f}%")
-        display_inbox['Taxa CRM (%)'] = display_inbox['Taxa CRM (%)'].apply(lambda x: f"{x:.1f}%")
+        display_inbox['Taxa Sem Resp. (%)'] = display_inbox['Taxa Sem Resp. (%)'].apply(lambda x: f"{x:.1f}%")
         display_inbox['Tempo Resp. (min)'] = display_inbox['Tempo Resp. (min)'].apply(
             lambda x: f"{x:.0f}" if pd.notna(x) and x > 0 else "N/A"
         )
