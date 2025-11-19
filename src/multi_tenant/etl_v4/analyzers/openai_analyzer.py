@@ -250,22 +250,18 @@ Retornar array vazio [] se não houver sinais positivos.
 ═══════════════════════════════════════════════════════════════════
 📝 CAMPO: analise_ia
 ═══════════════════════════════════════════════════════════════════
-Análise detalhada com 3-5 parágrafos:
+Análise CONCISA com 2-3 parágrafos curtos (máximo 400 caracteres total):
 
-Parágrafo 1: Resumo do perfil do lead
-- Contexto da conversa, interesse demonstrado, necessidades mencionadas
+Parágrafo 1 (2-3 linhas): Perfil e interesse do lead
+- Quem é, o que procura, nível de urgência
 
-Parágrafo 2: Nível de engajamento e sinais de interesse
-- Perguntas feitas, tom da conversa, urgência, qualidade das respostas
+Parágrafo 2 (2-3 linhas): Status e próximos passos
+- Se foi resolvido, se precisa follow-up, principais objeções (se houver)
 
-Parágrafo 3: Objeções ou barreiras identificadas (se houver)
-- O que pode impedir a conversão, preocupações do lead
+Parágrafo 3 (opcional, 1-2 linhas): Recomendação
+- Como abordar esse lead (apenas se precisa remarketing)
 
-Parágrafo 4: Status da conversa e próximos passos
-- Se foi resolvida, se precisa follow-up, o que ficou pendente
-
-Parágrafo 5: Recomendação estratégica
-- Como abordar esse lead, melhor momento para contato, estratégia de conversão
+IMPORTANTE: Seja OBJETIVO e DIRETO. Máximo 400 caracteres no total.
 
 ═══════════════════════════════════════════════════════════════════
 💌 CAMPO: sugestao_disparo
@@ -520,7 +516,7 @@ Analise esta conversa e retorne o JSON com as informações solicitadas."""
         elif sugestao_disparo:
             sugestao_disparo = self._sanitize_text(str(sugestao_disparo))
         else:
-            sugestao_disparo = ''
+            sugestao_disparo = None
 
         # ===================================================================
         # MONTAR RESULTADO
@@ -536,7 +532,7 @@ Analise esta conversa e retorne o JSON com as informações solicitadas."""
             # Campos específicos OpenAI (SANITIZAR para remover NULL bytes)
             'nome_mapeado_bot': self._sanitize_text(analysis.get('nome_mapeado_bot', '')),
             'analise_ia': self._sanitize_text(analise_ia),
-            'sugestao_disparo': sugestao_disparo if sugestao_disparo else '',
+            'sugestao_disparo': sugestao_disparo,  # None ou string, NUNCA string vazia
 
             # Novos campos para remarketing (opcional - podem ser salvos em JSONB)
             '_status_resolucao': status_resolucao,
@@ -744,7 +740,7 @@ Analise esta conversa e retorne o JSON com as informações solicitadas."""
         # Campos adicionais OpenAI (apenas campos genéricos multi-tenant)
         df_to_analyze['nome_mapeado_bot'] = results.apply(lambda x: x.get('nome_mapeado_bot', ''))
         df_to_analyze['analise_ia'] = results.apply(lambda x: x.get('analise_ia', ''))
-        df_to_analyze['sugestao_disparo'] = results.apply(lambda x: x.get('sugestao_disparo', ''))
+        df_to_analyze['sugestao_disparo'] = results.apply(lambda x: x.get('sugestao_disparo'))  # Manter None se não houver
 
         # ===================================================================
         # NOVOS CAMPOS: Remarketing Intelligence (2025-11-19)

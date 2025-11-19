@@ -648,3 +648,223 @@ def get_crm_conversions_detail(engine):
 
     except Exception as e:
         return pd.DataFrame()
+
+
+# ===================================================================
+# CATEGORIZAÇÃO DE CONVERSAS (Adicionado 2025-11-19)
+# ===================================================================
+
+def calculate_conversation_categories(df, min_threshold=5.0):
+    """
+    Categoriza conversas em tipos principais baseado em palavras-chave.
+
+    Categorias principais (baseado em análise de 2.069 conversas):
+    - PREÇO/PLANOS (65.4%)
+    - AGENDAMENTO (18.2%)
+    - INFORMAÇÕES GERAIS (6.3%)
+    - OUTROS (10.1%)
+
+    Args:
+        df: DataFrame com conversas (deve ter coluna 'message_compiled')
+        min_threshold: Percentual mínimo para categoria aparecer (padrão 5.0%)
+
+    Returns:
+        DataFrame com colunas:
+        - categoria: Nome da categoria
+        - quantidade: Número de conversas
+        - percentual: Percentual do total
+        - cor: Cor hex para gráfico
+    """
+    import re
+    import json
+
+    # ===================================================================
+    # PADRÕES DE CATEGORIZAÇÃO (baseados em análise real)
+    # ===================================================================
+    CATEGORY_PATTERNS = {
+        'AGENDAMENTO': {
+            'label': '📅 Agendamentos',
+            'color': '#28a745',  # Verde
+            'keywords': [
+                r'\bagendar\b', r'\bagendamento\b', r'\bmarcar\b', r'\bhorário\b',
+                r'\bvisita\b', r'\bdata\b', r'\bhora\b', r'\bquando\b',
+                r'\bexperimental\b', r'\btreino experimental\b', r'\baula experimental\b',
+                r'\bpode ser\b', r'\bagendado\b', r'\bconfirmado\b', r'\bok\s*✅\b',
+                r'\bagendei\b', r'\tte espero\b', r'\bmarcado\b'
+            ],
+            'weight': 2  # Prioridade alta
+        },
+
+        'PREÇO/PLANOS': {
+            'label': '💰 Preços & Planos',
+            'color': '#ffc107',  # Amarelo
+            'keywords': [
+                r'\bpreço\b', r'\bvalor\b', r'\bcusto\b', r'\bquanto\b',
+                r'\bplano\b', r'\bmensalidade\b', r'\bmatrícula\b',
+                r'\bpagamento\b', r'\bforma de pagamento\b', r'\bpagar\b',
+                r'\bpix\b', r'\bcartão\b', r'\bparcela\b', r'\bdinheiro\b',
+                r'\bcondição\b', r'\bpromoção\b', r'\bdesconto\b'
+            ],
+            'weight': 2
+        },
+
+        'INFORMAÇÕES GERAIS': {
+            'label': 'ℹ️ Informações Gerais',
+            'color': '#17a2b8',  # Azul claro
+            'keywords': [
+                r'\binformação\b', r'\bsobre\b', r'\bcomo funciona\b',
+                r'\bfunciona\b', r'\bdetalhes\b', r'\bme fala\b',
+                r'\bme explica\b', r'\bquero saber\b', r'\bgostaria de saber\b',
+                r'\bconhecer\b', r'\bserviços\b'
+            ],
+            'weight': 1
+        },
+
+        'SUPORTE/DÚVIDAS': {
+            'label': '❓ Suporte & Dúvidas',
+            'color': '#20c997',  # Verde água
+            'keywords': [
+                r'\bajuda\b', r'\bdúvida\b', r'\bnão entendi\b',
+                r'\bcomo faz\b', r'\bcomo faço\b', r'\bpreciso de ajuda\b',
+                r'\bsuporte\b', r'\batendimento\b', r'\bproblema\b'
+            ],
+            'weight': 1
+        },
+
+        'CANCELAMENTO/RECLAMAÇÃO': {
+            'label': '🚫 Cancelamentos',
+            'color': '#dc3545',  # Vermelho
+            'keywords': [
+                r'\bcancelar\b', r'\bcancelamento\b', r'\bdesistir\b',
+                r'\breclamação\b', r'\bnão funcionou\b',
+                r'\binsatisfeito\b', r'\bruim\b', r'\bpéssimo\b'
+            ],
+            'weight': 2
+        }
+    }
+
+    def extract_messages_text(message_compiled):
+        """Extrai texto limpo das mensagens compiladas"""
+        try:
+            if isinstance(message_compiled, str):
+                messages = json.loads(message_compiled)
+            else:
+                messages = message_compiled
+
+            texts = []
+            for msg in messages:
+                # Pular mensagens do sistema
+                if msg.get('message_type') in [2, 3]:
+                    continue
+
+                text = msg.get('text', '')
+                if text:
+                    texts.append(text.lower())
+
+            return ' '.join(texts)
+        except:
+            return ''
+
+    def categorize_single_conversation(message_text):
+        """Categoriza uma conversa baseada em palavras-chave"""
+        category_scores = {}
+
+        for category, config in CATEGORY_PATTERNS.items():
+            score = 0
+
+            for pattern in config['keywords']:
+                if re.search(pattern, message_text):
+                    score += config['weight']
+
+            if score > 0:
+                category_scores[category] = score
+
+        # Se não encontrou nenhuma categoria, retornar OUTROS
+        if not category_scores:
+            return 'OUTROS'
+
+        # Retornar categoria com maior score
+        primary_category = max(category_scores, key=category_scores.get)
+        return primary_category
+
+    # ===================================================================
+    # PROCESSAR TODAS AS CONVERSAS
+    # ===================================================================
+    categories = []
+
+    for _, row in df.iterrows():
+        message_compiled = row.get('message_compiled')
+        if not message_compiled or message_compiled == 'null':
+            categories.append('OUTROS')
+            continue
+
+        message_text = extract_messages_text(message_compiled)
+        category = categorize_single_conversation(message_text)
+        categories.append(category)
+
+    # ===================================================================
+    # CALCULAR ESTATÍSTICAS
+    # ===================================================================
+    from collections import Counter
+    category_counter = Counter(categories)
+    total = len(categories)
+
+    # Criar DataFrame de resultado
+    result_data = []
+
+    for category, count in category_counter.most_common():
+        percentage = (count / total * 100) if total > 0 else 0
+
+        # Pegar configuração da categoria (ou usar padrão para OUTROS)
+        config = CATEGORY_PATTERNS.get(category, {
+            'label': '📦 Outros',
+            'color': '#6c757d'
+        })
+
+        result_data.append({
+            'categoria': config['label'],
+            'quantidade': count,
+            'percentual': round(percentage, 1),
+            'cor': config['color']
+        })
+
+    result_df = pd.DataFrame(result_data)
+
+    # ===================================================================
+    # VALIDAÇÃO: Se não houver dados, retornar DataFrame vazio
+    # ===================================================================
+    if result_df.empty or total == 0:
+        return pd.DataFrame(columns=['categoria', 'quantidade', 'percentual', 'cor'])
+
+    # ===================================================================
+    # AGRUPAR CATEGORIAS MENORES EM "OUTROS"
+    # ===================================================================
+    # Separar categorias principais (>= threshold) das menores
+    main_categories = result_df[result_df['percentual'] >= min_threshold].copy()
+    small_categories = result_df[result_df['percentual'] < min_threshold]
+
+    # Se tiver categorias pequenas, agrupar em OUTROS
+    if not small_categories.empty:
+        outros_total = small_categories['quantidade'].sum()
+        outros_perc = small_categories['percentual'].sum()
+
+        # Verificar se já existe categoria OUTROS nas principais
+        outros_mask = main_categories['categoria'] == '📦 Outros'
+        if outros_mask.any():
+            # Somar com OUTROS existente
+            main_categories.loc[outros_mask, 'quantidade'] += outros_total
+            main_categories.loc[outros_mask, 'percentual'] += outros_perc
+        else:
+            # Criar nova entrada OUTROS
+            outros_row = pd.DataFrame([{
+                'categoria': '📦 Outros',
+                'quantidade': outros_total,
+                'percentual': round(outros_perc, 1),
+                'cor': '#6c757d'
+            }])
+            main_categories = pd.concat([main_categories, outros_row], ignore_index=True)
+
+    # Ordenar por quantidade (maior primeiro)
+    main_categories = main_categories.sort_values('quantidade', ascending=False).reset_index(drop=True)
+
+    return main_categories
