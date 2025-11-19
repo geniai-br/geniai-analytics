@@ -2544,19 +2544,9 @@ def show_client_dashboard(session, tenant_id=None):
     # Usar DataFrame filtrado para o restante do dashboard
     df = df_filtered
 
-    # === MÉTRICAS ===
-    # [FASE 7.2 - CORREÇÃO FINAL: Buscar total de leads SEM filtro de data]
-    total_leads_all_time = get_total_leads_count(display_tenant_id)
-
-    # Calcular métricas do período filtrado
-    metrics = calculate_metrics(df)
-
-    # Renderizar KPIs com total de leads SEM filtro
-    render_kpis(metrics, total_leads_no_filter=total_leads_all_time)
-
-    st.divider()
-
-    # === ANÁLISE POR INBOX === [FASE 5 - NOVO]
+    # === ANÁLISE POR INBOX (MÉTRICAS CONSOLIDADAS) === [FASE 5]
+    # NOTA: Removida duplicação de KPIs - métricas agora aparecem apenas
+    #       na seção "Métricas Consolidadas" dentro da Análise por Inbox
     render_inbox_analysis(df)
 
     st.divider()
