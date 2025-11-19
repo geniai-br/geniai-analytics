@@ -456,6 +456,43 @@ def prepare_period_distribution(df):
     return period_dist
 
 
+def prepare_conversation_categories(df):
+    """
+    Prepara dados de categorização de conversas
+    [NOVO - 2025-11-19]
+
+    Usa a função calculate_conversation_categories() do metrics.py
+    para categorizar conversas por tipo (Preços, Agendamentos, etc.)
+
+    Args:
+        df: DataFrame com conversas (deve conter conversa_compilada)
+
+    Returns:
+        pd.DataFrame: Categorias com quantidade, percentual e cor
+    """
+    if df.empty or 'conversa_compilada' not in df.columns:
+        return pd.DataFrame(columns=['categoria', 'quantidade', 'percentual', 'cor'])
+
+    # Importar função de categorização
+    import sys
+    import os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+    from app.utils.metrics import calculate_conversation_categories
+
+    try:
+        # IMPORTANTE: Renomear coluna para compatibilidade com metrics.py
+        df_for_categorization = df.copy()
+        df_for_categorization['message_compiled'] = df_for_categorization['conversa_compilada']
+
+        categories = calculate_conversation_categories(df_for_categorization, min_threshold=5.0)
+        return categories
+    except Exception as e:
+        logger.error(f"Erro ao categorizar conversas: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return pd.DataFrame(columns=['categoria', 'quantidade', 'percentual', 'cor'])
+
+
 def prepare_csv_export(df):
     """
     Prepara dados para exportação CSV
@@ -954,6 +991,67 @@ def render_score_distribution_chart(score_dist):
 # REMOVIDO: render_quality_metrics() - Arquivada em _archived/quality_metrics_removed.py
 # Data: 2025-11-11
 # Motivo: Simplificação do dashboard (métricas de qualidade não essenciais)
+
+
+def render_categories_chart(categories_data):
+    """
+    Renderiza gráfico de barras de categorias de conversas
+    [NOVO - 2025-11-19]
+
+    Args:
+        categories_data: DataFrame com categorias (categoria, quantidade, percentual, cor)
+    """
+    if categories_data.empty:
+        st.info("ℹ️ Sem dados para categorizar")
+        return
+
+    st.subheader("📁 Categorias de Conversas")
+
+    # Gráfico de barras com Plotly
+    import plotly.graph_objects as go
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Bar(
+        x=categories_data['categoria'],
+        y=categories_data['quantidade'],
+        marker=dict(
+            color=categories_data['cor'],
+            line=dict(color='rgba(255,255,255,0.2)', width=1)
+        ),
+        text=categories_data['quantidade'],
+        textposition='outside',
+        hovertemplate='<b>%{x}</b><br>Conversas: %{y}<br>Percentual: %{customdata:.1f}%<extra></extra>',
+        customdata=categories_data['percentual']
+    ))
+
+    fig.update_layout(
+        showlegend=False,
+        xaxis=dict(
+            showgrid=False,
+            title=None,
+            tickangle=-30
+        ),
+        yaxis=dict(
+            showgrid=True,
+            gridcolor='rgba(0,0,0,0.1)',
+            title=None
+        ),
+        height=350,
+        margin=dict(l=10, r=10, t=40, b=80)
+    )
+
+    # Config: Habilitar controles interativos (zoom, pan, reset)
+    config = {
+        'displayModeBar': True,
+        'displaylogo': False,
+        'modeBarButtonsToRemove': ['select2d', 'lasso2d']  # Remover apenas ferramentas de seleção
+    }
+    st.plotly_chart(fig, use_container_width=True, config=config)
+
+    # Resumo (categoria principal)
+    categoria_principal = categories_data.iloc[0]
+    st.caption(f"💡 Principal: **{categoria_principal['categoria']}** ({categoria_principal['percentual']}%)")
 
 
 def render_period_distribution_chart(period_dist):
@@ -2569,14 +2667,19 @@ def show_client_dashboard(session, tenant_id=None):
 
     st.divider()
 
-    # Linha 2: Leads por inbox + Distribuição de Score (lado a lado)
-    col1, col2 = st.columns(2)
+    # Linha 2: Leads por inbox + Categorias + Distribuição de Score (3 colunas)
+    col1, col2, col3 = st.columns(3)
 
     with col1:
         leads_by_inbox = prepare_leads_by_inbox(df)
         render_leads_by_inbox_chart(leads_by_inbox)
 
     with col2:
+        # === CATEGORIAS DE CONVERSAS === [NOVO - 2025-11-19]
+        categories_data = prepare_conversation_categories(df)
+        render_categories_chart(categories_data)
+
+    with col3:
         score_dist = prepare_score_distribution(df)
         render_score_distribution_chart(score_dist)
 
