@@ -1,6 +1,9 @@
 #!/bin/bash
 
-# Diretório do projeto (assumindo que o script está em scripts/analysis/)
+# Script de análise contínua - CDT Mossoró (tenant_id 14)
+# Teste de validação em outro contexto de negócio
+
+# Diretório do projeto
 PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 LOG_FILE="$PROJECT_ROOT/logs/analysis_log.txt"
 
@@ -19,16 +22,17 @@ if [ -z "$OPENAI_API_KEY" ]; then
     exit 1
 fi
 
-echo "🚀 Iniciando análise contínua - $(date)" | tee -a "$LOG_FILE"
+echo "🚀 Iniciando análise CDT Mossoró - $(date)" | tee -a "$LOG_FILE"
+echo "Tenant ID: 14" | tee -a "$LOG_FILE"
 echo "Processando todos os leads pendentes em lotes de 50..." | tee -a "$LOG_FILE"
 echo "" | tee -a "$LOG_FILE"
 
 # Loop até não haver mais leads pendentes
 while true; do
     # Contar leads pendentes ELEGÍVEIS (com filtro de 24h igual ao Python)
-    PENDENTES=$(PGPASSWORD='vlVMVM6UNz2yYSBlzodPjQvZh' psql -U johan_geniai -h localhost -d geniai_analytics -t -c "SELECT COUNT(*) FROM conversations_analytics WHERE tenant_id = 16 AND is_lead = true AND tipo_conversa IS NULL AND mc_last_message_at < NOW() - INTERVAL '24 hours';")
-    
-    echo "📊 Leads pendentes: $PENDENTES - $(date)" | tee -a "$LOG_FILE"
+    PENDENTES=$(PGPASSWORD='vlVMVM6UNz2yYSBlzodPjQvZh' psql -U johan_geniai -h localhost -d geniai_analytics -t -c "SELECT COUNT(*) FROM conversations_analytics WHERE tenant_id = 14 AND is_lead = true AND tipo_conversa IS NULL AND mc_last_message_at < NOW() - INTERVAL '24 hours';")
+
+    echo "📊 Leads pendentes CDT Mossoró: $PENDENTES - $(date)" | tee -a "$LOG_FILE"
 
     if [ $PENDENTES -eq 0 ]; then
         echo "✅ Todos os leads foram processados!" | tee -a "$LOG_FILE"
@@ -36,10 +40,10 @@ while true; do
     fi
 
     # Executar análise de um lote
-    cd "$PROJECT_ROOT" && venv/bin/python3 scripts/analysis/analyze_all_leads.py 2>&1 | tee -a "$LOG_FILE"
+    cd "$PROJECT_ROOT" && venv/bin/python3 scripts/testing/test_cdt_mossoro.py 2>&1 | tee -a "$LOG_FILE"
 
     # Pequena pausa entre lotes
     sleep 2
 done
 
-echo "🏁 Análise completa finalizada - $(date)" | tee -a "$LOG_FILE"
+echo "🏁 Análise CDT Mossoró finalizada - $(date)" | tee -a "$LOG_FILE"
