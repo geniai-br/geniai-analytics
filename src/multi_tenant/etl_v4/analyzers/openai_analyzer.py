@@ -86,6 +86,8 @@ class OpenAIAnalyzer(BaseAnalyzer):
         """
         Retorna o prompt genérico para análise de conversas de leads (multi-tenant).
 
+        ATUALIZADO: Agora inclui análise de resolução e necessidade de remarketing.
+
         Returns:
             str: System prompt para OpenAI
         """
@@ -94,45 +96,210 @@ class OpenAIAnalyzer(BaseAnalyzer):
 Sua tarefa é analisar a conversa completa entre o lead e a empresa e extrair as seguintes informações em formato JSON:
 
 {
-  "nome_mapeado_bot": "string - nome completo do lead que o bot descobriu durante a conversa (se mencionado)",
-  "visita_agendada": "boolean - true se houve confirmação de agendamento de visita/reunião, false caso contrário",
-  "analise_ia": "string - análise detalhada com 3-5 parágrafos",
-  "sugestao_disparo": "string - sugestão específica de mensagem para enviar ao lead"
+  "nome_mapeado_bot": "string - nome completo do lead extraído da conversa",
+  "visita_agendada": "boolean - confirmação explícita de agendamento",
+  "status_resolucao": "string - resolvida | abandonada_cliente | abandonada_atendente | pendente_resposta | em_negociacao",
+  "precisa_remarketing": "boolean - se precisa enviar mensagem de follow-up",
+  "motivo_remarketing": "string - justificativa técnica (interna, não enviar ao cliente)",
+  "nivel_interesse": "string - alto | medio | baixo | nenhum",
+  "objecoes_identificadas": ["array de strings - objeções do lead"],
+  "sinais_positivos": ["array de strings - indicadores de interesse"],
+  "analise_ia": "string - análise detalhada 3-5 parágrafos",
+  "sugestao_disparo": "string ou null - mensagem personalizada (null se não precisa remarketing)"
 }
 
-ESTRUTURA DA ANÁLISE IA (analise_ia):
-Parágrafo 1: Resumo do perfil do lead (contexto, interesse demonstrado, necessidades mencionadas)
-Parágrafo 2: Nível de engajamento e sinais de interesse (perguntas feitas, tom da conversa, urgência)
-Parágrafo 3: Objeções ou barreiras identificadas (se houver)
-Parágrafo 4: Oportunidades e pontos fortes para abordagem
-Parágrafo 5: Recomendação de estratégia de conversão
+═══════════════════════════════════════════════════════════════════
 
-SUGESTÃO DE DISPARO (sugestao_disparo):
-- Deve ser uma mensagem PERSONALIZADA baseada no perfil e interesse do lead
+📋 CAMPO: nome_mapeado_bot
+═══════════════════════════════════════════════════════════════════
+- Extrair o NOME COMPLETO que o lead forneceu durante a conversa
+- Procurar por perguntas do atendente: "Qual é o seu nome?", "Me diz seu nome", "Como você se chama?"
+- O nome deve ser EXATAMENTE como o lead respondeu (primeiro e último nome se possível)
+- Se o lead NÃO forneceu nome na conversa, retornar string vazia ""
+- NÃO usar o nome do contato do sistema, APENAS o que foi dito na conversa
+
+═══════════════════════════════════════════════════════════════════
+✅ CAMPO: visita_agendada
+═══════════════════════════════════════════════════════════════════
+Marcar TRUE apenas se houver CONFIRMAÇÃO EXPLÍCITA:
+- Palavras-chave: "agendado ✅", "confirmado", "te espero", "nos vemos", "marcado para", "você está agendado"
+- Atendente diz: "agendei sua visita", "visita confirmada", "anotei aqui"
+- Lead confirma horário/data específica e atendente confirma de volta
+
+Marcar FALSE se:
+- Lead apenas perguntou sobre agendar ("posso agendar?", "como faço para marcar?")
+- Ainda está negociando data/horário sem confirmação final
+- Lead disse "vou pensar" ou "depois eu confirmo"
+
+═══════════════════════════════════════════════════════════════════
+🔄 CAMPO: status_resolucao
+═══════════════════════════════════════════════════════════════════
+Analise a ÚLTIMA MENSAGEM e o CONTEXTO GERAL para classificar:
+
+"resolvida":
+- Atendimento foi concluído com sucesso
+- Exemplos: agendamento confirmado, pagamento resolvido, dúvida esclarecida, problema solucionado
+- Lead agradeceu e encerrou: "obrigado", "tudo certo", "👍", "valeu"
+- Última mensagem do atendente foi uma CONFIRMAÇÃO: "agendado ✅", "pago", "resolvido", "feito"
+- NÃO PRECISA remarketing - atendimento completo
+
+"abandonada_cliente":
+- Lead parou de responder no meio da conversa
+- Atendente fez pergunta/solicitação mas lead não respondeu
+- Última mensagem foi do atendente ou bot esperando resposta do cliente
+- PRECISA remarketing - tentar reengajar
+
+"abandonada_atendente":
+- Lead fez pergunta/solicitação mas atendente não respondeu
+- Lead demonstrou interesse mas ficou sem retorno
+- Última mensagem foi do lead esperando resposta
+- PRECISA remarketing urgente - lead esperando atendimento
+
+"pendente_resposta":
+- Conversa ativa mas aguardando próxima interação
+- Lead pediu tempo para pensar ("vou ver", "depois confirmo")
+- Solicitação de informação que será enviada depois
+- PODE PRECISAR remarketing suave após alguns dias
+
+"em_negociacao":
+- Conversa ativa, múltiplas trocas de mensagens recentes
+- Negociando detalhes (preço, horário, condições)
+- Ainda não chegou a uma conclusão
+- NÃO PRECISA remarketing agora - aguardar conclusão natural
+
+═══════════════════════════════════════════════════════════════════
+🎯 CAMPO: precisa_remarketing
+═══════════════════════════════════════════════════════════════════
+Marcar TRUE apenas se REALMENTE precisa enviar mensagem de follow-up:
+
+TRUE (PRECISA):
+- status_resolucao = "abandonada_cliente" (cliente sumiu, tentar reengajar)
+- status_resolucao = "abandonada_atendente" (cliente sem resposta, urgente)
+- status_resolucao = "pendente_resposta" E já passou tempo (lead pediu tempo)
+- Lead demonstrou interesse mas não concluiu ação
+
+FALSE (NÃO PRECISA):
+- status_resolucao = "resolvida" (atendimento completo, não incomodar)
+- status_resolucao = "em_negociacao" (conversa ativa, aguardar)
+- Lead agradeceu e encerrou
+- Pagamento/agendamento/problema já foi resolvido
+- Lead explicitamente pediu para não ser contatado
+
+═══════════════════════════════════════════════════════════════════
+💬 CAMPO: motivo_remarketing
+═══════════════════════════════════════════════════════════════════
+Justificativa TÉCNICA INTERNA (NÃO enviar ao cliente):
+- Explicar por que precisa (ou não) de remarketing
+- Exemplos:
+  * "Lead agendou visita e atendente confirmou. Atendimento completo."
+  * "Lead perguntou sobre treino mas não recebeu resposta do atendente. Precisa follow-up."
+  * "Cliente demonstrou interesse em plano mas parou de responder. Tentar reengajar."
+  * "Pagamento foi resolvido e cliente agradeceu. Não precisa contato adicional."
+
+═══════════════════════════════════════════════════════════════════
+📊 CAMPO: nivel_interesse
+═══════════════════════════════════════════════════════════════════
+"alto":
+- Fez perguntas específicas sobre produto/serviço
+- Solicitou agendamento/compra/contratação
+- Demonstrou urgência ("hoje", "agora", "rápido")
+- Engajamento alto (múltiplas mensagens, respostas rápidas)
+
+"medio":
+- Perguntou sobre preços/condições
+- Demonstrou interesse mas com dúvidas
+- Respondeu perguntas do atendente
+- Não demonstrou urgência
+
+"baixo":
+- Respostas curtas e vagas
+- Poucas mensagens
+- Interesse superficial
+- Pediu tempo para pensar
+
+"nenhum":
+- Não demonstrou interesse real
+- Spam, mensagem errada, engano
+- Apenas queria informação pontual
+- Não é lead qualificado
+
+═══════════════════════════════════════════════════════════════════
+🚫 CAMPO: objecoes_identificadas
+═══════════════════════════════════════════════════════════════════
+Lista de objeções/barreiras que o lead mencionou:
+- Preço: "muito caro", "não cabe no orçamento", "tem mais barato?"
+- Tempo: "não tenho tempo", "muita correria", "horário ruim"
+- Distância: "muito longe", "não tenho como ir", "fica onde?"
+- Dúvidas: "não sei se funciona", "tenho medo", "será que dá certo?"
+- Outros: qualquer barreira mencionada
+
+Retornar array vazio [] se não houver objeções.
+
+═══════════════════════════════════════════════════════════════════
+✨ CAMPO: sinais_positivos
+═══════════════════════════════════════════════════════════════════
+Lista de indicadores positivos de interesse/engajamento:
+- "quero agendar", "quando posso ir?", "tem vaga hoje?"
+- "quanto custa?", "quais são os planos?"
+- Respondeu rápido, fez múltiplas perguntas
+- Agradeceu, elogiou, mostrou entusiasmo
+- Confirmou interesse explicitamente
+
+Retornar array vazio [] se não houver sinais positivos.
+
+═══════════════════════════════════════════════════════════════════
+📝 CAMPO: analise_ia
+═══════════════════════════════════════════════════════════════════
+Análise detalhada com 3-5 parágrafos:
+
+Parágrafo 1: Resumo do perfil do lead
+- Contexto da conversa, interesse demonstrado, necessidades mencionadas
+
+Parágrafo 2: Nível de engajamento e sinais de interesse
+- Perguntas feitas, tom da conversa, urgência, qualidade das respostas
+
+Parágrafo 3: Objeções ou barreiras identificadas (se houver)
+- O que pode impedir a conversão, preocupações do lead
+
+Parágrafo 4: Status da conversa e próximos passos
+- Se foi resolvida, se precisa follow-up, o que ficou pendente
+
+Parágrafo 5: Recomendação estratégica
+- Como abordar esse lead, melhor momento para contato, estratégia de conversão
+
+═══════════════════════════════════════════════════════════════════
+💌 CAMPO: sugestao_disparo
+═══════════════════════════════════════════════════════════════════
+IMPORTANTE: Só preencher se precisa_remarketing = true
+
+Se precisa_remarketing = false:
+- Retornar null (não enviar mensagem)
+
+Se precisa_remarketing = true:
+- Mensagem PERSONALIZADA baseada no perfil e interesse do lead
 - Mencionar especificamente o que o lead demonstrou interesse
-- Incluir call-to-action claro (agendar visita, tirar dúvidas, conhecer os serviços, etc)
+- Incluir call-to-action claro
 - Usar tom humanizado e empático
 - Máximo 3-4 frases
+- Não mencionar "há alguns dias" se foi recente
 
-NOME MAPEADO BOT (nome_mapeado_bot):
-- Extrair o NOME COMPLETO que o bot perguntou e o lead respondeu durante a conversa
-- Procurar por perguntas do tipo: "Qual é o seu nome?", "Como você se chama?", "Me diz seu nome"
-- O nome deve ser EXATAMENTE como o lead forneceu (primeiro e último nome se possível)
-- Se o lead NÃO forneceu seu nome durante a conversa, retornar string vazia ""
-- Não usar o nome do contato do sistema, apenas o que foi dito na conversa
+Exemplos de BOAS sugestões:
+- "Oi [Nome]! Vi que você perguntou sobre [X]. Conseguiu tirar suas dúvidas? Estou à disposição!"
+- "Olá [Nome]! Notei seu interesse em [X]. Gostaria de saber mais ou agendar uma visita?"
 
-DETECÇÃO DE VISITA/REUNIÃO AGENDADA (visita_agendada):
-- Marcar TRUE se houver CONFIRMAÇÃO EXPLÍCITA de agendamento na conversa
-- Palavras-chave para TRUE: "visita agendada", "agendamento confirmado", "já agendei", "te espero", "vejo você", "nos vemos", "reunião marcada"
-- Marcar FALSE se o lead apenas perguntou sobre visita/reunião, mas NÃO confirmou
-- Marcar FALSE se ainda está em negociação ou pensando
-- A confirmação pode vir tanto do atendente quanto do próprio lead aceitando
+Exemplos de RUINS (evitar):
+- Mensagens genéricas sem personalização
+- Mencionar tempo incorreto ("há alguns dias" quando foi ontem)
+- Perguntar algo que já foi resolvido
 
-IMPORTANTE:
+═══════════════════════════════════════════════════════════════════
+
+INSTRUÇÕES FINAIS:
 - Analise TODO o histórico de mensagens, não apenas as últimas
 - Considere o contexto completo da conversa
+- Seja preciso na classificação do status_resolucao
+- Só marque precisa_remarketing = true se REALMENTE fizer sentido
 - A análise deve ser útil para a equipe de vendas tomar decisões
-- Seja objetivo e específico
 
 Retorne APENAS o JSON, sem texto adicional antes ou depois."""
 
@@ -297,35 +464,67 @@ Analise esta conversa e retorne o JSON com as informações solicitadas."""
         """
         Processa resposta da OpenAI e converte para formato padrão.
 
+        ATUALIZADO: Agora usa novos campos (status_resolucao, precisa_remarketing, nivel_interesse)
+        para calcular score de forma mais inteligente.
+
         Args:
             analysis: Dict retornado pela OpenAI
 
         Returns:
             Dict no formato padrão (compatível com BaseAnalyzer)
         """
-        # Extrair campos
+        # ===================================================================
+        # EXTRAIR CAMPOS DO JSON DA IA
+        # ===================================================================
         visit_scheduled = analysis.get('visita_agendada', False)
-
-        # NOTA: Como removemos probabilidade_conversao do prompt, vamos usar
-        # heurística simples: se tem análise = is_lead, se agendou visita = conversão alta
+        status_resolucao = analysis.get('status_resolucao', 'em_negociacao')
+        precisa_remarketing = analysis.get('precisa_remarketing', True)
+        nivel_interesse = analysis.get('nivel_interesse', 'medio')
+        objecoes = analysis.get('objecoes_identificadas', [])
+        sinais_positivos = analysis.get('sinais_positivos', [])
         analise_ia = analysis.get('analise_ia', '')
+        sugestao_disparo = analysis.get('sugestao_disparo', None)
+        motivo_remarketing = analysis.get('motivo_remarketing', '')
+
+        # ===================================================================
+        # DETERMINAR is_lead
+        # ===================================================================
+        # É lead se tem análise válida E nível de interesse não é "nenhum"
         has_analysis = bool(analise_ia and len(analise_ia) > 50)
+        is_lead = has_analysis and nivel_interesse != 'nenhum'
 
-        # Determinar is_lead baseado em ter análise válida
-        is_lead = has_analysis
+        # ===================================================================
+        # CALCULAR SCORE INTELIGENTE (0-100)
+        # ===================================================================
+        score = self._calculate_smart_score(
+            visit_scheduled=visit_scheduled,
+            status_resolucao=status_resolucao,
+            nivel_interesse=nivel_interesse,
+            precisa_remarketing=precisa_remarketing,
+            num_objecoes=len(objecoes) if isinstance(objecoes, list) else 0,
+            num_sinais_positivos=len(sinais_positivos) if isinstance(sinais_positivos, list) else 0
+        )
 
-        # Score baseado em visita agendada
-        if visit_scheduled:
-            score = 90.0  # Alta probabilidade
-        elif is_lead:
-            score = 50.0  # Média probabilidade
+        # ===================================================================
+        # CRM CONVERTED
+        # ===================================================================
+        # Converteu se: agendou visita OU status foi resolvido positivamente
+        crm_converted = bool(visit_scheduled) or (status_resolucao == 'resolvida' and nivel_interesse in ['alto', 'medio'])
+
+        # ===================================================================
+        # SUGESTÃO DE DISPARO
+        # ===================================================================
+        # Se precisa_remarketing = False, limpar sugestão (não enviar)
+        if not precisa_remarketing:
+            sugestao_disparo = None
+        elif sugestao_disparo:
+            sugestao_disparo = self._sanitize_text(str(sugestao_disparo))
         else:
-            score = 0.0   # Sem interesse
+            sugestao_disparo = ''
 
-        # CRM converted apenas se visita agendada
-        crm_converted = bool(visit_scheduled)
-
-        # Montar resultado (sanitizar todos os campos de texto)
+        # ===================================================================
+        # MONTAR RESULTADO
+        # ===================================================================
         result = {
             # Campos padrão (BaseAnalyzer)
             'is_lead': is_lead,
@@ -337,12 +536,107 @@ Analise esta conversa e retorne o JSON com as informações solicitadas."""
             # Campos específicos OpenAI (SANITIZAR para remover NULL bytes)
             'nome_mapeado_bot': self._sanitize_text(analysis.get('nome_mapeado_bot', '')),
             'analise_ia': self._sanitize_text(analise_ia),
-            'sugestao_disparo': self._sanitize_text(analysis.get('sugestao_disparo', '')),
+            'sugestao_disparo': sugestao_disparo if sugestao_disparo else '',
+
+            # Novos campos para remarketing (opcional - podem ser salvos em JSONB)
+            '_status_resolucao': status_resolucao,
+            '_precisa_remarketing': precisa_remarketing,
+            '_nivel_interesse': nivel_interesse,
+            '_motivo_remarketing': motivo_remarketing,
+            '_objecoes': objecoes if isinstance(objecoes, list) else [],
+            '_sinais_positivos': sinais_positivos if isinstance(sinais_positivos, list) else [],
         }
 
-        logger.debug(f"Conversa processada: is_lead={is_lead}, score={score}")
+        logger.debug(f"Conversa processada: is_lead={is_lead}, score={score:.1f}, "
+                    f"status={status_resolucao}, remarketing={precisa_remarketing}")
 
         return result
+
+    def _calculate_smart_score(
+        self,
+        visit_scheduled: bool,
+        status_resolucao: str,
+        nivel_interesse: str,
+        precisa_remarketing: bool,
+        num_objecoes: int,
+        num_sinais_positivos: int
+    ) -> float:
+        """
+        Calcula score inteligente baseado em múltiplos fatores.
+
+        Lógica:
+        - Visita agendada = 95+ (muito alta prioridade)
+        - Abandonada atendente = 85-90 (urgente, cliente esperando)
+        - Alto interesse + sinais positivos = 70-85
+        - Médio interesse = 40-70 (varia com objeções)
+        - Baixo interesse = 20-40
+        - Resolvida sem remarketing = 5-15 (baixíssima prioridade)
+        - Nenhum interesse = 0
+
+        Args:
+            visit_scheduled: Se agendou visita
+            status_resolucao: Status da conversa
+            nivel_interesse: Nível de interesse do lead
+            precisa_remarketing: Se precisa follow-up
+            num_objecoes: Quantidade de objeções
+            num_sinais_positivos: Quantidade de sinais positivos
+
+        Returns:
+            float: Score de 0 a 100
+        """
+        score = 50.0  # Base
+
+        # ====== VISITA AGENDADA (máxima prioridade) ======
+        if visit_scheduled:
+            return 95.0
+
+        # ====== STATUS DE RESOLUÇÃO ======
+        if status_resolucao == 'abandonada_atendente':
+            # Cliente esperando resposta = urgente!
+            score = 88.0
+        elif status_resolucao == 'abandonada_cliente':
+            # Cliente sumiu, tentar reengajar
+            score = 65.0
+        elif status_resolucao == 'pendente_resposta':
+            # Aguardando ação do cliente
+            score = 55.0
+        elif status_resolucao == 'em_negociacao':
+            # Conversa ativa, não precisa remarketing ainda
+            score = 45.0
+        elif status_resolucao == 'resolvida':
+            # Atendimento completo
+            if precisa_remarketing:
+                score = 30.0  # Resolvida mas pode tentar upsell
+            else:
+                score = 10.0  # Resolvida, não incomodar
+
+        # ====== NÍVEL DE INTERESSE (ajuste) ======
+        if nivel_interesse == 'alto':
+            score += 20
+        elif nivel_interesse == 'medio':
+            score += 5
+        elif nivel_interesse == 'baixo':
+            score -= 10
+        elif nivel_interesse == 'nenhum':
+            return 0.0  # Sem interesse, score zero
+
+        # ====== SINAIS POSITIVOS (boost) ======
+        if num_sinais_positivos > 0:
+            score += min(num_sinais_positivos * 3, 12)  # Até +12
+
+        # ====== OBJEÇÕES (penalidade) ======
+        if num_objecoes > 0:
+            score -= min(num_objecoes * 5, 15)  # Até -15
+
+        # ====== REMARKETING (ajuste final) ======
+        if not precisa_remarketing:
+            # Não precisa remarketing = baixa prioridade
+            score = min(score, 15.0)
+
+        # ====== GARANTIR RANGE 0-100 ======
+        score = max(0.0, min(100.0, score))
+
+        return round(score, 1)
 
     def analyze_dataframe(self, df: pd.DataFrame, skip_analyzed: bool = True) -> pd.DataFrame:
         """
@@ -451,6 +745,24 @@ Analise esta conversa e retorne o JSON com as informações solicitadas."""
         df_to_analyze['nome_mapeado_bot'] = results.apply(lambda x: x.get('nome_mapeado_bot', ''))
         df_to_analyze['analise_ia'] = results.apply(lambda x: x.get('analise_ia', ''))
         df_to_analyze['sugestao_disparo'] = results.apply(lambda x: x.get('sugestao_disparo', ''))
+
+        # ===================================================================
+        # NOVOS CAMPOS: Remarketing Intelligence (2025-11-19)
+        # ===================================================================
+        # Colunas dedicadas no banco (queries rápidas)
+        df_to_analyze['precisa_remarketing'] = results.apply(lambda x: x.get('_precisa_remarketing', True))
+        df_to_analyze['status_resolucao'] = results.apply(lambda x: x.get('_status_resolucao', None))
+        df_to_analyze['nivel_interesse'] = results.apply(lambda x: x.get('_nivel_interesse', None))
+
+        # JSONB: Dados estruturados completos em dados_extraidos_ia
+        df_to_analyze['dados_extraidos_ia'] = results.apply(lambda x: json.dumps({
+            'status_resolucao': x.get('_status_resolucao', ''),
+            'precisa_remarketing': x.get('_precisa_remarketing', True),
+            'nivel_interesse': x.get('_nivel_interesse', ''),
+            'motivo_remarketing': x.get('_motivo_remarketing', ''),
+            'objecoes_identificadas': x.get('_objecoes', []),
+            'sinais_positivos': x.get('_sinais_positivos', []),
+        }) if x.get('_precisa_remarketing') is not None else None)
 
         # Combinar DataFrames (analisadas + já existentes)
         if not df_already_analyzed.empty:
