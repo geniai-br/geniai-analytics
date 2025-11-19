@@ -929,7 +929,7 @@ def render_score_distribution_chart(score_dist):
     Renderiza gráfico de distribuição de score IA
 
     Args:
-        score_dist: DataFrame com distribuição de scores
+        score_dist: DataFrame com distribui��ão de scores
     """
     if score_dist.empty:
         st.info("ℹ️ Nenhum lead com classificação para exibir")
@@ -1268,8 +1268,8 @@ def render_inbox_analysis(df):
         # === VISÃO AGREGADA ===
         st.markdown("#### 📊 Métricas Consolidadas (Todas as Inboxes)")
 
-        # Métricas principais em 5 colunas
-        col1, col2, col3, col4, col5 = st.columns(5)
+        # Métricas principais em 3 colunas (removidas Visitas e CRM)
+        col1, col2, col3 = st.columns(3)
 
         with col1:
             st.metric(
@@ -1287,21 +1287,6 @@ def render_inbox_analysis(df):
             )
 
         with col3:
-            st.metric(
-                "Visitas Agendadas",
-                format_number(metrics_agregadas['total_visitas']),
-                help="Total de visitas agendadas"
-            )
-
-        with col4:
-            st.metric(
-                "Conversões CRM",
-                format_number(metrics_agregadas['total_crm']),
-                delta=f"{metrics_agregadas['taxa_conversao_crm']:.1f}% dos leads",
-                help="Leads convertidos em CRM"
-            )
-
-        with col5:
             # Formatar tempo de resposta
             avg_time = metrics_agregadas['avg_response_time']
             if pd.notna(avg_time) and avg_time > 0:
