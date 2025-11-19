@@ -84,36 +84,24 @@ class OpenAIAnalyzer(BaseAnalyzer):
 
     def _get_analysis_prompt(self) -> str:
         """
-        Retorna o prompt otimizado para análise de conversas da AllpFit.
+        Retorna o prompt genérico para análise de conversas de leads (multi-tenant).
 
         Returns:
             str: System prompt para OpenAI
         """
-        return """Você é um analista especializado em conversas de leads de academias de crossfit (AllpFit).
+        return """Você é um analista especializado em conversas de leads de negócios.
 
-Sua tarefa é analisar a conversa completa entre o lead e a academia e extrair as seguintes informações em formato JSON:
+Sua tarefa é analisar a conversa completa entre o lead e a empresa e extrair as seguintes informações em formato JSON:
 
 {
   "nome_mapeado_bot": "string - nome completo do lead que o bot descobriu durante a conversa (se mencionado)",
-  "condicao_fisica": "string - opções: Sedentário | Iniciante | Intermediário | Avançado | Não mencionado",
-  "objetivo": "string - opções: Perda de peso | Ganho de massa muscular | Condicionamento físico | Saúde geral | Estética/Definição | Não mencionado",
-  "probabilidade_conversao": "number - de 0 a 5, onde:",
-  "visita_agendada": "boolean - true se houve confirmação de agendamento de visita, false caso contrário",
-  "analise_ia": "string - análise detalhada com 3-5 parágrafos explicando:",
+  "visita_agendada": "boolean - true se houve confirmação de agendamento de visita/reunião, false caso contrário",
+  "analise_ia": "string - análise detalhada com 3-5 parágrafos",
   "sugestao_disparo": "string - sugestão específica de mensagem para enviar ao lead"
 }
 
-CRITÉRIOS DE PROBABILIDADE DE CONVERSÃO (0-5):
-
-5 - ALTÍSSIMA: Lead agendou visita OU pediu para matricular OU perguntou sobre pagamento/contrato OU confirmou que vai começar
-4 - ALTA: Lead perguntou valores E horários E demonstrou interesse claro ("quero", "vou pensar", "preciso ver minha agenda")
-3 - MÉDIA: Lead fez múltiplas perguntas (valor, horário, planos) mas não demonstrou urgência ou comprometimento
-2 - BAIXA: Lead fez poucas perguntas genéricas ou respondeu apenas com "ok", "entendi" sem aprofundar
-1 - MUITO BAIXA: Lead demonstrou objeções (caro, longe, sem tempo) ou respostas muito curtas e secas
-0 - NULA: Lead não respondeu adequadamente, mandou apenas "oi" ou mensagens sem sentido, ou claramente não está interessado
-
 ESTRUTURA DA ANÁLISE IA (analise_ia):
-Parágrafo 1: Resumo do perfil do lead (condição física, objetivo, contexto pessoal mencionado)
+Parágrafo 1: Resumo do perfil do lead (contexto, interesse demonstrado, necessidades mencionadas)
 Parágrafo 2: Nível de engajamento e sinais de interesse (perguntas feitas, tom da conversa, urgência)
 Parágrafo 3: Objeções ou barreiras identificadas (se houver)
 Parágrafo 4: Oportunidades e pontos fortes para abordagem
@@ -121,8 +109,8 @@ Parágrafo 5: Recomendação de estratégia de conversão
 
 SUGESTÃO DE DISPARO (sugestao_disparo):
 - Deve ser uma mensagem PERSONALIZADA baseada no perfil e interesse do lead
-- Mencionar especificamente o objetivo do lead e condição física
-- Incluir call-to-action claro (agendar visita, tirar dúvidas, etc)
+- Mencionar especificamente o que o lead demonstrou interesse
+- Incluir call-to-action claro (agendar visita, tirar dúvidas, conhecer os serviços, etc)
 - Usar tom humanizado e empático
 - Máximo 3-4 frases
 
@@ -133,19 +121,18 @@ NOME MAPEADO BOT (nome_mapeado_bot):
 - Se o lead NÃO forneceu seu nome durante a conversa, retornar string vazia ""
 - Não usar o nome do contato do sistema, apenas o que foi dito na conversa
 
-DETECÇÃO DE VISITA AGENDADA (visita_agendada):
+DETECÇÃO DE VISITA/REUNIÃO AGENDADA (visita_agendada):
 - Marcar TRUE se houver CONFIRMAÇÃO EXPLÍCITA de agendamento na conversa
-- Palavras-chave para TRUE: "visita agendada", "agendamento confirmado", "já agendei", "te espero", "vejo você", "nos vemos"
-- Marcar FALSE se o lead apenas perguntou sobre visita, mas NÃO confirmou
+- Palavras-chave para TRUE: "visita agendada", "agendamento confirmado", "já agendei", "te espero", "vejo você", "nos vemos", "reunião marcada"
+- Marcar FALSE se o lead apenas perguntou sobre visita/reunião, mas NÃO confirmou
 - Marcar FALSE se ainda está em negociação ou pensando
 - A confirmação pode vir tanto do atendente quanto do próprio lead aceitando
 
 IMPORTANTE:
 - Analise TODO o histórico de mensagens, não apenas as últimas
 - Considere o contexto completo da conversa
-- Se não houver informação suficiente, use "Não mencionado"
-- Seja preciso e objetivo na probabilidade
 - A análise deve ser útil para a equipe de vendas tomar decisões
+- Seja objetivo e específico
 
 Retorne APENAS o JSON, sem texto adicional antes ou depois."""
 
@@ -180,11 +167,8 @@ Retorne APENAS o JSON, sem texto adicional antes ou depois."""
             'ai_probability_label': 'N/A',
             'ai_probability_score': 0.0,
             'nome_mapeado_bot': '',
-            'condicao_fisica': 'Não mencionado',
-            'objetivo': 'Não mencionado',
             'analise_ia': '',
             'sugestao_disparo': '',
-            'probabilidade_conversao': 0,
         }
 
         # Validar entrada
@@ -320,24 +304,26 @@ Analise esta conversa e retorne o JSON com as informações solicitadas."""
             Dict no formato padrão (compatível com BaseAnalyzer)
         """
         # Extrair campos
-        prob_openai = analysis.get('probabilidade_conversao', 0)
         visit_scheduled = analysis.get('visita_agendada', False)
 
-        # Validar probabilidade (0-5)
-        if not isinstance(prob_openai, (int, float)) or prob_openai < 0 or prob_openai > 5:
-            logger.warning(f"Probabilidade inválida: {prob_openai}, usando 0")
-            prob_openai = 0
+        # NOTA: Como removemos probabilidade_conversao do prompt, vamos usar
+        # heurística simples: se tem análise = is_lead, se agendou visita = conversão alta
+        analise_ia = analysis.get('analise_ia', '')
+        has_analysis = bool(analise_ia and len(analise_ia) > 50)
+
+        # Determinar is_lead baseado em ter análise válida
+        is_lead = has_analysis
+
+        # Score baseado em visita agendada
+        if visit_scheduled:
+            score = 90.0  # Alta probabilidade
+        elif is_lead:
+            score = 50.0  # Média probabilidade
         else:
-            prob_openai = int(prob_openai)
+            score = 0.0   # Sem interesse
 
-        # Converter probabilidade OpenAI (0-5) para score (0-100)
-        score = self._openai_probability_to_score(prob_openai)
-
-        # Determinar is_lead (probabilidade >= 2 = lead)
-        is_lead = (prob_openai >= 2)
-
-        # Determinar CRM converted (probabilidade == 5 geralmente indica conversão)
-        crm_converted = (prob_openai == 5)
+        # CRM converted apenas se visita agendada
+        crm_converted = bool(visit_scheduled)
 
         # Montar resultado (sanitizar todos os campos de texto)
         result = {
@@ -350,14 +336,11 @@ Analise esta conversa e retorne o JSON com as informações solicitadas."""
 
             # Campos específicos OpenAI (SANITIZAR para remover NULL bytes)
             'nome_mapeado_bot': self._sanitize_text(analysis.get('nome_mapeado_bot', '')),
-            'condicao_fisica': self._sanitize_text(analysis.get('condicao_fisica', 'Não mencionado')),
-            'objetivo': self._sanitize_text(analysis.get('objetivo', 'Não mencionado')),
-            'analise_ia': self._sanitize_text(analysis.get('analise_ia', '')),
+            'analise_ia': self._sanitize_text(analise_ia),
             'sugestao_disparo': self._sanitize_text(analysis.get('sugestao_disparo', '')),
-            'probabilidade_conversao': prob_openai,
         }
 
-        logger.debug(f"Conversa processada: is_lead={is_lead}, prob={prob_openai}, score={score}")
+        logger.debug(f"Conversa processada: is_lead={is_lead}, score={score}")
 
         return result
 
@@ -449,11 +432,8 @@ Analise esta conversa e retorne o JSON com as informações solicitadas."""
                         'ai_probability_label': 'N/A',
                         'ai_probability_score': 0.0,
                         'nome_mapeado_bot': '',
-                        'condicao_fisica': 'Não mencionado',
-                        'objetivo': 'Não mencionado',
                         'analise_ia': '',
                         'sugestao_disparo': '',
-                        'probabilidade_conversao': 0,
                     }))
 
         # Ordenar resultados pelo índice original
@@ -467,13 +447,10 @@ Analise esta conversa e retorne o JSON com as informações solicitadas."""
         df_to_analyze['ai_probability_label'] = results.apply(lambda x: x['ai_probability_label'])
         df_to_analyze['ai_probability_score'] = results.apply(lambda x: x['ai_probability_score'])
 
-        # Campos adicionais OpenAI
+        # Campos adicionais OpenAI (apenas campos genéricos multi-tenant)
         df_to_analyze['nome_mapeado_bot'] = results.apply(lambda x: x.get('nome_mapeado_bot', ''))
-        df_to_analyze['condicao_fisica'] = results.apply(lambda x: x.get('condicao_fisica', 'Não mencionado'))
-        df_to_analyze['objetivo'] = results.apply(lambda x: x.get('objetivo', 'Não mencionado'))
         df_to_analyze['analise_ia'] = results.apply(lambda x: x.get('analise_ia', ''))
         df_to_analyze['sugestao_disparo'] = results.apply(lambda x: x.get('sugestao_disparo', ''))
-        df_to_analyze['probabilidade_conversao'] = results.apply(lambda x: x.get('probabilidade_conversao', 0))
 
         # Combinar DataFrames (analisadas + já existentes)
         if not df_already_analyzed.empty:
