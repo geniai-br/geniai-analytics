@@ -2081,11 +2081,16 @@ def render_remarketing_analysis_section(df, tenant_id):
     if score_filter > 0:
         leads_display = leads_display[leads_display['score_prioridade'] >= score_filter]
 
-    # === FILTRAR APENAS LEADS ANALISADOS ===
-    leads_analisados = leads_display[leads_display['analisado_em'].notna()].copy()
+    # === FILTRAR APENAS LEADS ANALISADOS COM SUGESTÃO DE DISPARO ===
+    # IMPORTANTE: Só exibir leads que têm sugestão (prontos para disparo)
+    leads_analisados = leads_display[
+        (leads_display['analisado_em'].notna()) &
+        (leads_display['sugestao_disparo'].notna()) &
+        (leads_display['sugestao_disparo'] != '')
+    ].copy()
 
     if leads_analisados.empty:
-        st.info("ℹ️ Nenhum lead analisado encontrado")
+        st.info("ℹ️ Nenhum lead com sugestão de disparo encontrado")
         return
 
     # Ordenar por inatividade (mais recentes primeiro)
