@@ -79,8 +79,9 @@ A plataforma permite que múltiplos clientes (academias, escolas, clínicas, loj
 
 ### Componentes Principais
 
-#### 1. **ETL Pipeline** (`src/etl/`)
+#### 1. **ETL Pipeline** (`src/multi_tenant/etl_v4/`)
 - Extração incremental de conversas do Chatwoot
+- **Detecção automática de novos inboxes** por account_id
 - Transformação e enriquecimento de dados
 - Carga no banco multi-tenant com isolamento por tenant
 - Automação via Systemd Timers (execução a cada 30 minutos)
@@ -193,22 +194,31 @@ USING (tenant_id = current_setting('app.current_tenant_id')::INTEGER);
 ```
 1. EXTRAÇÃO (ETL)
    Chatwoot DB → ETL Pipeline → geniai_analytics DB
+   - FASE 0: Detecção automática de novos inboxes
    - A cada 30 minutos (Systemd Timer)
    - Sincronização incremental (apenas novos dados)
    - Watermark por tenant (controle de última sincronização)
 
-2. ANÁLISE IA (Opcional)
+2. CATEGORIZAÇÃO AUTOMÁTICA
+   Conversas novas → Análise Regex → Categorias identificadas
+   - Tipos: Lead | Atendimento | Dúvida | Reclamação | Outros
+   - Subtipo de remarketing: Recente (0-24h) | Médio (1-7 dias) | Frio (7+ dias)
+   - Identificação de leads sem resposta do time
+
+3. ANÁLISE IA (Opcional)
    Conversas novas → OpenAI GPT-4o-mini → Análise salva no DB
    - Sentimento: positivo/neutro/negativo
    - Intenção: informação/compra/suporte/reclamação
    - Classificação: Alto/Médio/Baixo interesse
    - Score: 0-100% probabilidade de conversão
+   - Sugestão de mensagem personalizada para remarketing
 
-3. VISUALIZAÇÃO (Dashboard)
+4. VISUALIZAÇÃO (Dashboard)
    DB → Streamlit → Cliente vê dashboard
    - Login com email/senha
    - RLS garante isolamento por tenant
    - Cache de 5 minutos para performance
+   - Filtros por categoria e tipo de conversa
 ```
 
 ---
@@ -293,14 +303,24 @@ USING (tenant_id = current_setting('app.current_tenant_id')::INTEGER);
 ### Fase 1-7: Sistema Base ✅ (Concluído)
 - Multi-tenancy com RLS
 - Dashboard genérico aplicável a qualquer segmento
-- ETL automatizado
+- ETL automatizado com detecção automática de inboxes
 - Integração OpenAI para análise de conversas
 
-### Fase 8: Remarketing Inteligente (Planejado)
-- Identificação automática de leads inativos (24h sem resposta)
-- Geração de mensagens de reengajamento com IA
-- Templates contextuais (RECENTE/MEDIO/FRIO)
-- Webhooks para disparo automático
+### Fase 8: Remarketing Inteligente ✅ (Concluído - 19/Nov/2025)
+- ✅ Identificação automática de leads inativos (24h sem resposta)
+- ✅ Geração de mensagens de reengajamento com IA
+- ✅ Templates contextuais (RECENTE/MEDIO/FRIO)
+- ✅ Categorização automática de conversas
+- ✅ Seção dedicada de Remarketing no dashboard
+- 🔄 Webhooks para disparo automático (em planejamento)
+
+### Melhorias Técnicas Recentes (18-21/Nov/2025)
+- ✅ Limpeza de código obsoleto (~7.800 linhas removidas)
+- ✅ Remoção de módulos single-tenant antigos
+- ✅ Sistema de rotação de logs automático
+- ✅ Correção de loop infinito em scripts de análise
+- ✅ Fix em testes CI/CD para módulos ativos
+- ✅ Detecção automática de novos inboxes no ETL
 
 ### Futuro (Ideias)
 - API REST para integrações
