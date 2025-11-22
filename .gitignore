@@ -66,6 +66,7 @@ leads_contatos.xlsx
 # Logs
 logs/
 *.log
+*.log.gz
 
 # Relatórios gerados
 relatorio_conversoes_*.txt

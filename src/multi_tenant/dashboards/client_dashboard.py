@@ -33,14 +33,16 @@ def load_conversations(tenant_id, date_start=None, date_end=None, inbox_filter=N
     Carrega conversas do tenant (filtrado automaticamente via RLS)
 
     Args:
-        tenant_id: ID do tenant (usado apenas para display, RLS filtra automaticamente)
+        tenant_id: ID do tenant (IMPORTANTE: usado como chave de cache!)
         date_start: Data início do filtro (opcional)
         date_end: Data fim do filtro (opcional)
 
     Returns:
         pd.DataFrame: Conversas do tenant
     """
+    # IMPORTANTE: Configurar RLS DENTRO da função para garantir cache correto por tenant
     engine = get_database_engine()
+    set_rls_context(engine, tenant_id, tenant_id)  # Usar tenant_id como user_id temporário
 
     # Query base (RLS filtra automaticamente por tenant_id)
     query = """
@@ -77,10 +79,15 @@ def load_conversations(tenant_id, date_start=None, date_end=None, inbox_filter=N
             nome_mapeado_bot,
             mc_first_message_at as primeiro_contato,
             mc_last_message_at as ultimo_contato,
-            message_compiled as conversa_compilada
-            -- REMOVIDO: Colunas AllpFit-específicas (condicao_fisica, objetivo, analise_ia, sugestao_disparo, probabilidade_conversao)
-            -- Motivo: Não aplicáveis a outros segmentos (educação, financeiro, etc.)
-            -- Data: 2025-11-11 (pós-apresentação aos superiores)
+            message_compiled as conversa_compilada,
+            -- FASE 8: Colunas de Análise de Remarketing
+            tipo_conversa,
+            analise_ia,
+            sugestao_disparo,
+            score_prioridade,
+            dados_extraidos_ia,
+            metadados_analise_ia,
+            analisado_em
         FROM conversations_analytics
         WHERE 1=1
     """
@@ -447,6 +454,43 @@ def prepare_period_distribution(df):
     period_dist = period_dist.sort_values('_order').drop('_order', axis=1)
 
     return period_dist
+
+
+def prepare_conversation_categories(df):
+    """
+    Prepara dados de categorização de conversas
+    [NOVO - 2025-11-19]
+
+    Usa a função calculate_conversation_categories() do metrics.py
+    para categorizar conversas por tipo (Preços, Agendamentos, etc.)
+
+    Args:
+        df: DataFrame com conversas (deve conter conversa_compilada)
+
+    Returns:
+        pd.DataFrame: Categorias com quantidade, percentual e cor
+    """
+    if df.empty or 'conversa_compilada' not in df.columns:
+        return pd.DataFrame(columns=['categoria', 'quantidade', 'percentual', 'cor'])
+
+    # Importar função de categorização
+    import sys
+    import os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+    from app.utils.metrics import calculate_conversation_categories
+
+    try:
+        # IMPORTANTE: Renomear coluna para compatibilidade com metrics.py
+        df_for_categorization = df.copy()
+        df_for_categorization['message_compiled'] = df_for_categorization['conversa_compilada']
+
+        categories = calculate_conversation_categories(df_for_categorization, min_threshold=5.0)
+        return categories
+    except Exception as e:
+        logger.error(f"Erro ao categorizar conversas: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return pd.DataFrame(columns=['categoria', 'quantidade', 'percentual', 'cor'])
 
 
 def prepare_csv_export(df):
@@ -922,7 +966,7 @@ def render_score_distribution_chart(score_dist):
     Renderiza gráfico de distribuição de score IA
 
     Args:
-        score_dist: DataFrame com distribuição de scores
+        score_dist: DataFrame com distribui��ão de scores
     """
     if score_dist.empty:
         st.info("ℹ️ Nenhum lead com classificação para exibir")
@@ -947,6 +991,67 @@ def render_score_distribution_chart(score_dist):
 # REMOVIDO: render_quality_metrics() - Arquivada em _archived/quality_metrics_removed.py
 # Data: 2025-11-11
 # Motivo: Simplificação do dashboard (métricas de qualidade não essenciais)
+
+
+def render_categories_chart(categories_data):
+    """
+    Renderiza gráfico de barras de categorias de conversas
+    [NOVO - 2025-11-19]
+
+    Args:
+        categories_data: DataFrame com categorias (categoria, quantidade, percentual, cor)
+    """
+    if categories_data.empty:
+        st.info("ℹ️ Sem dados para categorizar")
+        return
+
+    st.subheader("📁 Categorias de Conversas")
+
+    # Gráfico de barras com Plotly
+    import plotly.graph_objects as go
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Bar(
+        x=categories_data['categoria'],
+        y=categories_data['quantidade'],
+        marker=dict(
+            color=categories_data['cor'],
+            line=dict(color='rgba(255,255,255,0.2)', width=1)
+        ),
+        text=categories_data['quantidade'],
+        textposition='outside',
+        hovertemplate='<b>%{x}</b><br>Conversas: %{y}<br>Percentual: %{customdata:.1f}%<extra></extra>',
+        customdata=categories_data['percentual']
+    ))
+
+    fig.update_layout(
+        showlegend=False,
+        xaxis=dict(
+            showgrid=False,
+            title=None,
+            tickangle=-30
+        ),
+        yaxis=dict(
+            showgrid=True,
+            gridcolor='rgba(0,0,0,0.1)',
+            title=None
+        ),
+        height=350,
+        margin=dict(l=10, r=10, t=40, b=80)
+    )
+
+    # Config: Habilitar controles interativos (zoom, pan, reset)
+    config = {
+        'displayModeBar': True,
+        'displaylogo': False,
+        'modeBarButtonsToRemove': ['select2d', 'lasso2d']  # Remover apenas ferramentas de seleção
+    }
+    st.plotly_chart(fig, use_container_width=True, config=config)
+
+    # Resumo (categoria principal)
+    categoria_principal = categories_data.iloc[0]
+    st.caption(f"💡 Principal: **{categoria_principal['categoria']}** ({categoria_principal['percentual']}%)")
 
 
 def render_period_distribution_chart(period_dist):
@@ -1184,6 +1289,7 @@ def prepare_inbox_metrics(df):
     # Métricas agregadas (todas as inboxes juntas)
     total_conversas = len(df)
     total_leads = len(df[df['is_lead'] == True])
+    total_sem_resposta = len(df[(df['is_lead'] == True) & (df['tipo_conversa'] == 'SKIP_NO_RESPONSE')])
     total_visitas = len(df[df['visit_scheduled'] == True])
     total_crm = len(df[df['crm_converted'] == True])
 
@@ -1193,6 +1299,8 @@ def prepare_inbox_metrics(df):
     metrics_agregadas = {
         'total_conversas': total_conversas,
         'total_leads': total_leads,
+        'total_sem_resposta': total_sem_resposta,
+        'taxa_sem_resposta': (total_sem_resposta / total_leads * 100) if total_leads > 0 else 0,
         'total_visitas': total_visitas,
         'total_crm': total_crm,
         'taxa_conversao_leads': (total_leads / total_conversas * 100) if total_conversas > 0 else 0,
@@ -1201,6 +1309,10 @@ def prepare_inbox_metrics(df):
     }
 
     # Métricas por inbox individual
+    # Função customizada para contar sem_resposta
+    def count_sem_resposta(group):
+        return ((group['is_lead'] == True) & (group['tipo_conversa'] == 'SKIP_NO_RESPONSE')).sum()
+
     inbox_groups = df.groupby('inbox_name').agg({
         'conversation_id': 'count',  # Total de conversas
         'is_lead': lambda x: (x == True).sum(),  # Total de leads
@@ -1209,11 +1321,24 @@ def prepare_inbox_metrics(df):
         'first_response_time_minutes': 'mean'  # Tempo médio de resposta
     }).reset_index()
 
-    inbox_groups.columns = ['inbox_name', 'total_conversas', 'total_leads', 'total_visitas', 'total_crm', 'avg_response_time']
+    # Calcular sem_resposta separadamente (precisa acessar múltiplas colunas)
+    sem_resposta_por_inbox = df[df['is_lead'] == True].groupby('inbox_name').apply(
+        lambda x: (x['tipo_conversa'] == 'SKIP_NO_RESPONSE').sum()
+    ).reset_index(name='total_sem_resposta')
+
+    # Merge com inbox_groups
+    inbox_groups = inbox_groups.merge(sem_resposta_por_inbox, on='inbox_name', how='left')
+    inbox_groups['total_sem_resposta'] = inbox_groups['total_sem_resposta'].fillna(0).astype(int)
+
+    inbox_groups.columns = ['inbox_name', 'total_conversas', 'total_leads', 'total_visitas', 'total_crm', 'avg_response_time', 'total_sem_resposta']
 
     # Calcular taxas de conversão
     inbox_groups['taxa_leads'] = inbox_groups.apply(
         lambda row: (row['total_leads'] / row['total_conversas'] * 100) if row['total_conversas'] > 0 else 0,
+        axis=1
+    )
+    inbox_groups['taxa_sem_resposta'] = inbox_groups.apply(
+        lambda row: (row['total_sem_resposta'] / row['total_leads'] * 100) if row['total_leads'] > 0 else 0,
         axis=1
     )
     inbox_groups['taxa_crm'] = inbox_groups.apply(
@@ -1261,8 +1386,8 @@ def render_inbox_analysis(df):
         # === VISÃO AGREGADA ===
         st.markdown("#### 📊 Métricas Consolidadas (Todas as Inboxes)")
 
-        # Métricas principais em 5 colunas
-        col1, col2, col3, col4, col5 = st.columns(5)
+        # Métricas principais em 4 colunas
+        col1, col2, col3, col4 = st.columns(4)
 
         with col1:
             st.metric(
@@ -1275,26 +1400,10 @@ def render_inbox_analysis(df):
             st.metric(
                 "Total Leads",
                 format_number(metrics_agregadas['total_leads']),
-                delta=f"{metrics_agregadas['taxa_conversao_leads']:.1f}% conversão",
                 help="Leads identificados em todas as inboxes"
             )
 
         with col3:
-            st.metric(
-                "Visitas Agendadas",
-                format_number(metrics_agregadas['total_visitas']),
-                help="Total de visitas agendadas"
-            )
-
-        with col4:
-            st.metric(
-                "Conversões CRM",
-                format_number(metrics_agregadas['total_crm']),
-                delta=f"{metrics_agregadas['taxa_conversao_crm']:.1f}% dos leads",
-                help="Leads convertidos em CRM"
-            )
-
-        with col5:
             # Formatar tempo de resposta
             avg_time = metrics_agregadas['avg_response_time']
             if pd.notna(avg_time) and avg_time > 0:
@@ -1310,6 +1419,13 @@ def render_inbox_analysis(df):
                 "Tempo Médio Resposta",
                 time_str,
                 help="Tempo médio de primeira resposta"
+            )
+
+        with col4:
+            st.metric(
+                "Sem Resposta Bot/Agente",
+                format_number(metrics_agregadas['total_sem_resposta']),
+                help="Leads que nunca receberam resposta do bot ou agente"
             )
 
         st.divider()
@@ -1342,15 +1458,14 @@ def render_inbox_analysis(df):
             st.info("ℹ️ Nenhuma inbox encontrada")
             return
 
-        # Exibir tabela com métricas por inbox
+        # Exibir tabela com métricas por inbox (removidas Visitas e CRM, adicionada Sem Resposta)
         display_inbox = inbox_metrics[[
             'inbox_name',
             'total_conversas',
             'total_leads',
             'taxa_leads',
-            'total_visitas',
-            'total_crm',
-            'taxa_crm',
+            'total_sem_resposta',
+            'taxa_sem_resposta',
             'avg_response_time'
         ]].copy()
 
@@ -1360,15 +1475,14 @@ def render_inbox_analysis(df):
             'Conversas',
             'Leads',
             'Taxa Leads (%)',
-            'Visitas',
-            'CRM',
-            'Taxa CRM (%)',
+            'Sem Resposta',
+            'Taxa Sem Resp. (%)',
             'Tempo Resp. (min)'
         ]
 
         # Formatar colunas
         display_inbox['Taxa Leads (%)'] = display_inbox['Taxa Leads (%)'].apply(lambda x: f"{x:.1f}%")
-        display_inbox['Taxa CRM (%)'] = display_inbox['Taxa CRM (%)'].apply(lambda x: f"{x:.1f}%")
+        display_inbox['Taxa Sem Resp. (%)'] = display_inbox['Taxa Sem Resp. (%)'].apply(lambda x: f"{x:.1f}%")
         display_inbox['Tempo Resp. (min)'] = display_inbox['Tempo Resp. (min)'].apply(
             lambda x: f"{x:.0f}" if pd.notna(x) and x > 0 else "N/A"
         )
@@ -1623,13 +1737,14 @@ def render_leads_table(df, df_original, tenant_name, date_start, date_end):
         with col_page_input:
             # Input direto de página
             page_input = st.number_input(
-                "Ir para página",
+                "Página",
                 min_value=1,
                 max_value=total_pages,
                 value=st.session_state.leads_page,
                 step=1,
                 key="page_input",
-                label_visibility="collapsed"
+                label_visibility="collapsed",
+                help="Ir para página específica"
             )
             if page_input != st.session_state.leads_page:
                 st.session_state.leads_page = page_input
@@ -1647,6 +1762,7 @@ def render_leads_table(df, df_original, tenant_name, date_start, date_end):
     # FASE 7: Remover colunas LEAD, CRM, VISITA, SCORE e CLASSIFICAÇÃO IA (2025-11-13)
     # FASE 7.1: Adicionar Primeira/Última Conversa, remover Data (2025-11-13)
     # FASE 7.2: Adicionar Conversa Completa formatada, remover prévia e expanders (2025-11-13)
+    # FASE 8.9: Adicionar Análise de IA e Sugestão de Disparo (2025-11-17)
     display_df = leads_paginated[[
         'conversation_display_id',
         'contact_name',
@@ -1655,7 +1771,9 @@ def render_leads_table(df, df_original, tenant_name, date_start, date_end):
         'primeiro_contato',  # [FASE 7.1 - NOVO]
         'ultimo_contato',    # [FASE 7.1 - NOVO]
         'nome_mapeado_bot',
-        'conversa_compilada'  # [FASE 6 - NOVO]
+        'conversa_compilada',  # [FASE 6 - NOVO]
+        'analise_ia',  # [FASE 8.9 - NOVO]
+        'sugestao_disparo'  # [FASE 8.9 - NOVO]
     ]].copy()
 
     # Formatar conversa completa (igual single-tenant) [FASE 7.2 - NOVO]
@@ -1663,6 +1781,21 @@ def render_leads_table(df, df_original, tenant_name, date_start, date_end):
         lambda row: format_conversation_readable(row['conversa_compilada'], row['contact_name'] or "Lead"),
         axis=1
     )
+
+    # [FASE 8.9 - NOVO] Formatar análise de IA (sem truncamento)
+    def format_analise_ia(analise):
+        if pd.isna(analise) or analise == '' or analise is None:
+            return '-'
+        return str(analise).strip()
+
+    # [FASE 8.9 - NOVO] Formatar sugestão de disparo (sem truncamento)
+    def format_sugestao_disparo(sugestao):
+        if pd.isna(sugestao) or sugestao == '' or sugestao is None:
+            return '-'
+        return str(sugestao).strip()
+
+    display_df['analise_ia_formatada'] = display_df['analise_ia'].apply(format_analise_ia)
+    display_df['sugestao_disparo_formatada'] = display_df['sugestao_disparo'].apply(format_sugestao_disparo)
 
     # Selecionar colunas para visualização
     display_df_view = display_df[[
@@ -1673,7 +1806,9 @@ def render_leads_table(df, df_original, tenant_name, date_start, date_end):
         'primeiro_contato',
         'ultimo_contato',
         'nome_mapeado_bot',
-        'conversa_formatada'  # [FASE 7.2 - NOVO: Conversa completa substituindo prévia]
+        'conversa_formatada',  # [FASE 7.2 - NOVO: Conversa completa substituindo prévia]
+        'analise_ia_formatada',  # [FASE 8.9 - NOVO]
+        'sugestao_disparo_formatada'  # [FASE 8.9 - NOVO]
     ]].copy()
 
     display_df_view.columns = [
@@ -1684,7 +1819,9 @@ def render_leads_table(df, df_original, tenant_name, date_start, date_end):
         'Primeira Conversa',  # [FASE 7.1 - NOVO]
         'Última Conversa',    # [FASE 7.1 - NOVO]
         'Nome Mapeado',
-        'Conversa Completa'  # [FASE 7.2 - NOVO: Coluna completa na tabela]
+        'Conversa Completa',  # [FASE 7.2 - NOVO: Coluna completa na tabela]
+        'Análise de IA',  # [FASE 8.9 - NOVO]
+        'Sugestão de Disparo'  # [FASE 8.9 - NOVO]
     ]
 
     # REMOVIDO (FASE 7): Formatação de colunas booleanas (Lead, Visita, CRM)
@@ -1708,6 +1845,603 @@ def render_leads_table(df, df_original, tenant_name, date_start, date_end):
 
     # REMOVIDO: Modal de Análise IA Detalhada (específico AllpFit)
     # Ver: src/multi_tenant/dashboards/_archived/allpfit_specific_functions.py → render_allpfit_ai_analysis_modal()
+
+
+# ============================================================================
+# ANÁLISE DE REMARKETING [FASE 8]
+# ============================================================================
+
+def calculate_inactivity_hours(ultimo_contato):
+    """
+    Calcula horas de inatividade desde última mensagem
+
+    Args:
+        ultimo_contato: Timestamp da última mensagem
+
+    Returns:
+        float: Horas de inatividade (ou None se não disponível)
+    """
+    if pd.isna(ultimo_contato):
+        return None
+
+    now = datetime.now()
+    if isinstance(ultimo_contato, str):
+        ultimo_contato = pd.to_datetime(ultimo_contato)
+
+    delta = now - ultimo_contato
+    return delta.total_seconds() / 3600
+
+
+def format_inactivity_time(horas):
+    """
+    Formata tempo de inatividade de forma legível
+
+    Args:
+        horas: Horas de inatividade
+
+    Returns:
+        str: Tempo formatado (ex: "2d 5h", "1sem")
+    """
+    if pd.isna(horas) or horas is None:
+        return "-"
+
+    if horas < 24:
+        return f"{int(horas)}h"
+    elif horas < 168:  # < 7 dias
+        dias = int(horas // 24)
+        horas_rest = int(horas % 24)
+        return f"{dias}d {horas_rest}h"
+    elif horas < 720:  # < 30 dias
+        semanas = int(horas // 168)
+        return f"{semanas}sem"
+    else:  # 30+ dias
+        meses = int(horas // 720)
+        return f"{meses}mes"
+
+
+def get_remarketing_status_badge(row):
+    """
+    Retorna badge de status de análise de remarketing
+
+    Args:
+        row: Linha do DataFrame com dados do lead
+
+    Returns:
+        str: Badge formatado
+    """
+    # Lead com análise completa
+    if pd.notna(row.get('analisado_em')):
+        return '✅ Analisado'
+
+    # Calcular horas de inatividade
+    horas_inativo = calculate_inactivity_hours(row.get('ultimo_contato'))
+
+    if horas_inativo is None:
+        return '⚠️ Sem data'
+
+    # Lead inativo 24h+ (aguardando análise)
+    if horas_inativo >= 24:
+        return '⏳ Aguardando Análise'
+
+    # Lead ativo (<24h)
+    horas_restantes = int(24 - horas_inativo)
+    return f'🔄 Ativo (análise em {horas_restantes}h)'
+
+
+def format_tipo_remarketing_badge(tipo):
+    """
+    Formata tipo de remarketing como badge colorido
+
+    Args:
+        tipo: Tipo de remarketing
+
+    Returns:
+        str: Badge formatado
+    """
+    badges = {
+        'REMARKETING_RECENTE': '🟢 Recente (24-48h)',
+        'REMARKETING_MEDIO': '🟡 Médio (48h-7d)',
+        'REMARKETING_FRIO': '🔴 Frio (7d+)',
+    }
+    return badges.get(tipo, '-')
+
+
+def format_score_numerico(score):
+    """
+    Formata score de prioridade como número (0-5)
+
+    Args:
+        score: Score de 0 a 5
+
+    Returns:
+        str: Score numérico formatado ou '-' se inválido
+    """
+    if pd.isna(score) or score is None:
+        return '-'
+
+    score = int(score)
+    if score < 0 or score > 5:
+        return '-'
+
+    return str(score)
+
+
+def render_remarketing_analysis_section(df, tenant_id):
+    """
+    Renderiza seção de Análise de Remarketing (FASE 8)
+
+    Features:
+    - Cards de resumo (Analisados, Aguardando 24h, Ativos)
+    - Filtro por tipo de remarketing
+    - Tabela paginada com checkboxes de seleção
+    - Botões de disparo (individual, selecionados, todos)
+    - Expanders sincronizados com página atual
+
+    Args:
+        df: DataFrame com conversas (já filtrado)
+        tenant_id: ID do tenant
+    """
+    st.subheader("🤖 Análise de Remarketing (Leads Inativos 24h+)")
+
+    if df.empty:
+        st.info("ℹ️ Nenhum dado disponível para análise de remarketing")
+        return
+
+    # Filtrar apenas leads
+    leads_df = df[df['is_lead'] == True].copy()
+
+    if leads_df.empty:
+        st.info("ℹ️ Nenhum lead encontrado no período selecionado")
+        return
+
+    # Calcular tempo de inatividade para todos os leads
+    leads_df['horas_inativo'] = leads_df['ultimo_contato'].apply(calculate_inactivity_hours)
+
+    # Classificar leads
+    analisados = len(leads_df[leads_df['analisado_em'].notna()])
+    aguardando_24h = len(leads_df[(leads_df['horas_inativo'] >= 24) & (leads_df['analisado_em'].isna())])
+    ativos = len(leads_df[leads_df['horas_inativo'] < 24])
+
+    # === CARDS DE RESUMO ===
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.metric(
+            "✅ Analisados",
+            format_number(analisados),
+            help="Leads inativos 24h+ com análise de remarketing"
+        )
+
+    with col2:
+        st.metric(
+            "⏳ Aguardando 24h",
+            format_number(aguardando_24h),
+            help="Leads inativos 24h+ sem análise (serão analisados no próximo ETL)"
+        )
+
+    with col3:
+        st.metric(
+            "🔄 Ativos",
+            format_number(ativos),
+            help="Leads com última msg < 24h (janela de follow-up manual)"
+        )
+
+    st.divider()
+
+    # === FILTROS: TIPO E SCORE ===
+    col_filter_tipo, col_filter_score, col_btn = st.columns([2, 1.5, 1.5])
+
+    with col_filter_tipo:
+        tipo_filter = st.multiselect(
+            "🎯 Filtrar por Tipo de Remarketing:",
+            options=['REMARKETING_RECENTE', 'REMARKETING_MEDIO', 'REMARKETING_FRIO'],
+            default=[],
+            format_func=lambda x: {
+                'REMARKETING_RECENTE': '🟢 Recente (24-48h)',
+                'REMARKETING_MEDIO': '🟡 Médio (48h-7d)',
+                'REMARKETING_FRIO': '🔴 Frio (7d+)'
+            }.get(x, x),
+            key="tipo_remarketing_filter",
+            help="Filtrar leads analisados por tipo de remarketing"
+        )
+
+    with col_filter_score:
+        score_filter = st.slider(
+            "⭐ Score Mínimo:",
+            min_value=0,
+            max_value=5,
+            value=0,
+            step=1,
+            key="score_remarketing_filter",
+            help="Filtrar por score de prioridade (0 = todos, 1-5 = mínimo)"
+        )
+
+    with col_btn:
+        # Botão "Analisar Pendentes" (futuro - FASE 8.4)
+        if aguardando_24h > 0:
+            st.button(
+                f"🤖 Analisar {aguardando_24h} Pendentes (24h+)",
+                use_container_width=True,
+                disabled=True,
+                help="Em breve: Análise sob demanda de leads pendentes"
+            )
+        else:
+            st.success("✅ Todos os leads inativos (24h+) foram analisados!")
+
+    st.divider()
+
+    # === APLICAR FILTROS ===
+    leads_display = leads_df.copy()
+
+    # Filtro por tipo
+    if tipo_filter:
+        leads_display = leads_display[leads_display['tipo_conversa'].isin(tipo_filter)]
+
+    # Filtro por score mínimo
+    if score_filter > 0:
+        leads_display = leads_display[leads_display['score_prioridade'] >= score_filter]
+
+    # === FILTRAR APENAS LEADS ANALISADOS COM SUGESTÃO DE DISPARO ===
+    # IMPORTANTE: Só exibir leads que têm sugestão (prontos para disparo)
+    leads_analisados = leads_display[
+        (leads_display['analisado_em'].notna()) &
+        (leads_display['sugestao_disparo'].notna()) &
+        (leads_display['sugestao_disparo'] != '')
+    ].copy()
+
+    if leads_analisados.empty:
+        st.info("ℹ️ Nenhum lead com sugestão de disparo encontrado")
+        return
+
+    # Ordenar por inatividade (mais recentes primeiro)
+    leads_analisados = leads_analisados.sort_values('ultimo_contato', ascending=False)
+
+    # Adicionar colunas formatadas
+    leads_analisados['status_badge'] = leads_analisados.apply(get_remarketing_status_badge, axis=1)
+    leads_analisados['tipo_badge'] = leads_analisados['tipo_conversa'].apply(format_tipo_remarketing_badge)
+    leads_analisados['inatividade_formatada'] = leads_analisados['horas_inativo'].apply(format_inactivity_time)
+    leads_analisados['score_visual'] = leads_analisados['score_prioridade'].apply(format_score_numerico)
+
+    # === PAGINAÇÃO ===
+    # Inicializar estado de paginação
+    if 'remarketing_page' not in st.session_state:
+        st.session_state.remarketing_page = 1
+
+    # Configuração
+    LEADS_PER_PAGE = 20
+    total_leads = len(leads_analisados)
+    total_pages = (total_leads + LEADS_PER_PAGE - 1) // LEADS_PER_PAGE
+
+    # Garantir que página está dentro dos limites
+    if st.session_state.remarketing_page > total_pages and total_pages > 0:
+        st.session_state.remarketing_page = total_pages
+    if st.session_state.remarketing_page < 1:
+        st.session_state.remarketing_page = 1
+
+    # Calcular offset
+    offset = (st.session_state.remarketing_page - 1) * LEADS_PER_PAGE
+
+    # Paginar
+    leads_paginated = leads_analisados.iloc[offset:offset + LEADS_PER_PAGE].copy()
+
+    # Inicializar seleção global (persiste entre páginas)
+    if 'selected_remarketing_leads' not in st.session_state:
+        st.session_state.selected_remarketing_leads = set()
+
+    # === ABAS PRINCIPAIS ===
+    tab1, tab2, tab3 = st.tabs(["📊 Tabela de Leads", "🔍 Análise Detalhada", "📤 Disparo"])
+
+    # ========================================
+    # ABA 1: TABELA DE LEADS
+    # ========================================
+    with tab1:
+        # Checkbox "Selecionar todos" (página atual)
+        col_select_all, col_info_selected = st.columns([1, 3])
+
+        with col_select_all:
+            # Verificar se TODOS da página atual estão selecionados
+            page_ids = set(leads_paginated['conversation_id'].tolist())
+            all_page_selected = page_ids.issubset(st.session_state.selected_remarketing_leads)
+
+            select_all_page = st.checkbox(
+                "Selecionar todos (página)",
+                value=all_page_selected,
+                key="select_all_remarketing_page",
+                help="Selecionar/desselecionar todos os leads da página atual"
+            )
+
+            # Atualizar seleção
+            if select_all_page:
+                st.session_state.selected_remarketing_leads.update(page_ids)
+            else:
+                # Só desmarcar se o checkbox foi desmarcado pelo usuário
+                if all_page_selected:
+                    st.session_state.selected_remarketing_leads -= page_ids
+
+        with col_info_selected:
+            num_selected = len(st.session_state.selected_remarketing_leads)
+            if num_selected > 0:
+                st.caption(f"✅ **{num_selected}** lead(s) selecionado(s) (todas as páginas)")
+            else:
+                st.caption("ℹ️ Nenhum lead selecionado")
+
+        st.divider()
+
+        # === CABEÇALHO DA TABELA ===
+        col_check_h, col_id_h, col_nome_h, col_tel_h, col_tipo_h, col_inativ_h, col_score_h, col_analise_h, col_sugestao_h = st.columns([0.4, 0.7, 1.5, 1.2, 1.5, 0.8, 0.6, 2, 1.5])
+
+        with col_check_h:
+            st.markdown("**☑️**")
+        with col_id_h:
+            st.markdown("**ID**")
+        with col_nome_h:
+            st.markdown("**Nome do Lead**")
+        with col_tel_h:
+            st.markdown("**Telefone**")
+        with col_tipo_h:
+            st.markdown("**Tipo de Remarketing**")
+        with col_inativ_h:
+            st.markdown("**Inatividade**")
+        with col_score_h:
+            st.markdown("**Score**")
+        with col_analise_h:
+            st.markdown("**Análise de IA**")
+        with col_sugestao_h:
+            st.markdown("**Sugestão de Disparo**")
+
+        st.divider()
+
+        # === LINHAS DA TABELA ===
+        for idx, row in leads_paginated.iterrows():
+            col_check, col_id, col_nome, col_tel, col_tipo, col_inativ, col_score, col_analise, col_sugestao = st.columns([0.4, 0.7, 1.5, 1.2, 1.5, 0.8, 0.6, 2, 1.5])
+
+            conv_id = row['conversation_id']
+
+            with col_check:
+                # Checkbox individual
+                is_selected = conv_id in st.session_state.selected_remarketing_leads
+                selected = st.checkbox(
+                    "Selecionar",
+                    value=is_selected,
+                    key=f"check_remarketing_{conv_id}",
+                    label_visibility="collapsed",
+                    help="Selecionar/desselecionar este lead para disparo"
+                )
+
+                # Atualizar seleção
+                if selected:
+                    st.session_state.selected_remarketing_leads.add(conv_id)
+                else:
+                    st.session_state.selected_remarketing_leads.discard(conv_id)
+
+            with col_id:
+                st.markdown(f"**#{row['conversation_display_id']}**")
+
+            with col_nome:
+                st.markdown(row['contact_name'])
+
+            with col_tel:
+                st.markdown(f"`{row['contact_phone']}`")
+
+            with col_tipo:
+                st.markdown(row['tipo_badge'])
+
+            with col_inativ:
+                st.markdown(row['inatividade_formatada'])
+
+            with col_score:
+                st.markdown(f"**{row['score_visual']}**/5")
+
+            with col_analise:
+                # Truncar análise para caber na coluna
+                analise_text = row['analise_ia'] if pd.notna(row['analise_ia']) else '-'
+                if len(analise_text) > 100:
+                    analise_text = analise_text[:97] + '...'
+                st.markdown(f"<small>{analise_text}</small>", unsafe_allow_html=True)
+
+            with col_sugestao:
+                # Truncar sugestão para caber na coluna
+                sugestao_text = row['sugestao_disparo'] if pd.notna(row['sugestao_disparo']) else '-'
+                if len(sugestao_text) > 80:
+                    sugestao_text = sugestao_text[:77] + '...'
+                st.markdown(f"<small>{sugestao_text}</small>", unsafe_allow_html=True)
+
+        st.divider()
+
+        # === CONTROLES DE PAGINAÇÃO ===
+        col_info, col_nav = st.columns([3, 2])
+
+        with col_info:
+            start_record = offset + 1
+            end_record = min(offset + LEADS_PER_PAGE, total_leads)
+            st.info(f"📊 Mostrando **{start_record}-{end_record}** de **{total_leads}** leads | Página **{st.session_state.remarketing_page}** de **{total_pages}**")
+
+        with col_nav:
+            col_prev, col_page_input, col_next = st.columns([1, 2, 1])
+
+            with col_prev:
+                if st.button("◀️ Anterior", disabled=(st.session_state.remarketing_page == 1), use_container_width=True, key="remarketing_prev"):
+                    st.session_state.remarketing_page -= 1
+                    st.rerun()
+
+            with col_page_input:
+                page_input = st.number_input(
+                    "Página de remarketing",
+                    min_value=1,
+                    max_value=total_pages,
+                    value=st.session_state.remarketing_page,
+                    step=1,
+                    key="remarketing_page_input",
+                    label_visibility="collapsed",
+                    help="Ir para página específica"
+                )
+                if page_input != st.session_state.remarketing_page:
+                    st.session_state.remarketing_page = page_input
+                    st.rerun()
+
+            with col_next:
+                if st.button("Próximo ▶️", disabled=(st.session_state.remarketing_page >= total_pages), use_container_width=True, key="remarketing_next"):
+                    st.session_state.remarketing_page += 1
+                    st.rerun()
+
+    # ========================================
+    # ABA 2: ANÁLISE DETALHADA
+    # ========================================
+    with tab2:
+        st.info(f"📋 Mostrando análise detalhada dos **{len(leads_paginated)}** leads da página atual")
+
+        for idx, row in leads_paginated.iterrows():
+            with st.expander(
+                f"💬 {row['contact_name']} (ID: #{row['conversation_display_id']}) - Score: {row['score_visual']}/5",
+                expanded=False
+            ):
+                col_info, col_score = st.columns([3, 1])
+
+                with col_info:
+                    st.markdown(f"**📞 Telefone:** {row['contact_phone']}")
+                    st.markdown(f"**⏰ Inatividade:** {row['inatividade_formatada']}")
+                    st.markdown(f"**🎯 Tipo:** {row['tipo_badge']}")
+
+                with col_score:
+                    st.markdown(f"**⭐ Score:** {row['score_visual']}/5")
+                    if pd.notna(row['analisado_em']):
+                        st.caption(f"Analisado em: {row['analisado_em'].strftime('%d/%m %H:%M')}")
+
+                st.divider()
+
+                # Análise IA
+                if pd.notna(row['analise_ia']):
+                    st.markdown("**📝 Análise da IA:**")
+                    st.info(row['analise_ia'])
+
+                # Dados extraídos
+                if pd.notna(row['dados_extraidos_ia']):
+                    st.markdown("**📊 Dados Extraídos da Conversa:**")
+                    import json
+                    try:
+                        dados = json.loads(row['dados_extraidos_ia']) if isinstance(row['dados_extraidos_ia'], str) else row['dados_extraidos_ia']
+
+                        col_d1, col_d2 = st.columns(2)
+                        with col_d1:
+                            st.markdown(f"- **Interesse mencionado:** {dados.get('interesse_mencionado', 'Não mencionado')}")
+                            st.markdown(f"- **Nível de urgência:** {dados.get('urgencia', 'Não mencionado')}")
+                        with col_d2:
+                            objecoes = dados.get('objecoes', [])
+                            st.markdown(f"- **Objeções levantadas:** {', '.join(objecoes) if objecoes else 'Nenhuma'}")
+                    except:
+                        st.caption("⚠️ Erro ao processar dados extraídos")
+
+                # Sugestão de disparo
+                if pd.notna(row['sugestao_disparo']):
+                    st.markdown("**💬 Sugestão de Mensagem de Remarketing:**")
+                    st.success(row['sugestao_disparo'])
+
+                    # Botões de ação individual
+                    col_copy, col_send = st.columns(2)
+
+                    with col_copy:
+                        st.button(
+                            "📋 Copiar Sugestão",
+                            key=f"copy_sugestao_{row['conversation_id']}",
+                            disabled=True,
+                            use_container_width=True,
+                            help="Em breve: Copiar sugestão para clipboard"
+                        )
+
+                    with col_send:
+                        st.button(
+                            "📤 Disparar para este Lead",
+                            key=f"send_individual_{row['conversation_id']}",
+                            disabled=True,
+                            use_container_width=True,
+                            help="Em breve: Disparar mensagem diretamente para este lead"
+                        )
+
+                # Metadados (tokens e custo)
+                if pd.notna(row['metadados_analise_ia']):
+                    st.markdown("---")
+                    st.markdown("**📊 Metadados da Análise:**")
+                    try:
+                        metadados = json.loads(row['metadados_analise_ia']) if isinstance(row['metadados_analise_ia'], str) else row['metadados_analise_ia']
+
+                        col_m1, col_m2, col_m3 = st.columns(3)
+                        with col_m1:
+                            st.metric("Tokens Usados", format_number(metadados.get('tokens_total', 0)))
+                        with col_m2:
+                            custo = metadados.get('custo_brl', 0)
+                            st.metric("Custo", f"R$ {custo:.4f}")
+                        with col_m3:
+                            st.metric("Modelo", metadados.get('modelo', 'N/A'))
+                    except:
+                        st.caption("⚠️ Erro ao processar metadados")
+
+    # ========================================
+    # ABA 3: DISPARO
+    # ========================================
+    with tab3:
+        st.markdown("### 📤 Envio de Mensagens de Remarketing")
+
+        num_selected = len(st.session_state.selected_remarketing_leads)
+
+        # Info sobre seleção
+        if num_selected > 0:
+            st.success(f"✅ **{num_selected}** lead(s) selecionado(s) na tabela (todas as páginas)")
+        else:
+            st.warning("⚠️ Nenhum lead selecionado. Volte para a aba **Tabela de Leads** para selecionar leads.")
+
+        st.divider()
+
+        # Botões de disparo
+        st.markdown("#### Opções de Disparo:")
+
+        col_btn1, col_btn2 = st.columns(2)
+
+        with col_btn1:
+            st.button(
+                f"📤 Disparar para {num_selected} Selecionado(s)",
+                use_container_width=True,
+                disabled=True,
+                help=f"Em breve: Disparar mensagens para os {num_selected} lead(s) selecionado(s) na tabela"
+            )
+
+        with col_btn2:
+            st.button(
+                f"📤 Disparar para TODOS ({total_leads})",
+                use_container_width=True,
+                disabled=True,
+                help=f"Em breve: Disparar mensagens para TODOS os {total_leads} leads analisados (com confirmação)"
+            )
+
+        st.divider()
+
+        # Gerenciar seleção
+        st.markdown("#### Gerenciar Seleção:")
+
+        col_clear, col_info_disp = st.columns([1, 3])
+
+        with col_clear:
+            if st.button("🗑️ Limpar Seleção", use_container_width=True):
+                st.session_state.selected_remarketing_leads = set()
+                st.rerun()
+
+        with col_info_disp:
+            if num_selected > 0:
+                st.caption(f"💡 Use este botão para limpar os {num_selected} lead(s) selecionado(s)")
+            else:
+                st.caption("ℹ️ Selecione leads na aba **Tabela de Leads** antes de disparar")
+
+        st.divider()
+
+        # Informações adicionais
+        st.markdown("#### ℹ️ Sobre o Disparo:")
+        st.info("""
+        **Como funciona:**
+        1. Selecione os leads desejados na aba **Tabela de Leads** usando os checkboxes
+        2. Volte para esta aba e escolha a opção de disparo
+        3. As mensagens sugeridas pela IA serão enviadas automaticamente via WhatsApp
+
+        **Status:** Esta funcionalidade será implementada em breve por Hyago
+        """)
 
 
 # ============================================================================
@@ -1775,6 +2509,7 @@ def show_client_dashboard(session, tenant_id=None):
     st.divider()
 
     # === INICIALIZAR SESSION STATE DOS FILTROS RÁPIDOS === [FASE 4]
+    # IMPORTANTE: Inicializar ANTES de detectar mudança de tenant
     if 'filter_nome' not in st.session_state:
         st.session_state.filter_nome = ""
     if 'filter_telefone' not in st.session_state:
@@ -1787,6 +2522,34 @@ def show_client_dashboard(session, tenant_id=None):
         st.session_state.filter_classificacao = []
     if 'filter_score_min' not in st.session_state:
         st.session_state.filter_score_min = 0.0
+
+    # === DETECTAR MUDANÇA DE TENANT E RESETAR FILTROS === [BUGFIX]
+    # Quando admin troca de tenant, os filtros do tenant anterior persistem
+    # causando queries com 0 resultados (inboxes/status inexistentes)
+    if 'last_viewed_tenant_id' not in st.session_state:
+        st.session_state.last_viewed_tenant_id = display_tenant_id
+
+    # Detectar mudança de tenant (comparação ocorre APÓS inicialização)
+    if st.session_state.last_viewed_tenant_id != display_tenant_id:
+        # Mudou de tenant - Resetar TODOS os filtros e estados
+        st.session_state.filter_nome = ""
+        st.session_state.filter_telefone = ""
+        st.session_state.filter_inboxes = []
+        st.session_state.filter_status_list = []
+        st.session_state.filter_classificacao = []
+        st.session_state.filter_score_min = 0.0
+        # Resetar paginação
+        if 'leads_page' in st.session_state:
+            st.session_state.leads_page = 1
+        if 'remarketing_page' in st.session_state:
+            st.session_state.remarketing_page = 1
+        # Resetar seleções de remarketing
+        if 'selected_remarketing_leads' in st.session_state:
+            st.session_state.selected_remarketing_leads = set()
+        # IMPORTANTE: Limpar cache do Streamlit para forçar reload dos dados
+        st.cache_data.clear()
+        # Atualizar tenant atual
+        st.session_state.last_viewed_tenant_id = display_tenant_id
 
     # === FILTROS DE DATA E INBOX ===
     col1, col2, col3, col4 = st.columns([2, 1, 1, 2])
@@ -1893,19 +2656,9 @@ def show_client_dashboard(session, tenant_id=None):
     # Usar DataFrame filtrado para o restante do dashboard
     df = df_filtered
 
-    # === MÉTRICAS ===
-    # [FASE 7.2 - CORREÇÃO FINAL: Buscar total de leads SEM filtro de data]
-    total_leads_all_time = get_total_leads_count(display_tenant_id)
-
-    # Calcular métricas do período filtrado
-    metrics = calculate_metrics(df)
-
-    # Renderizar KPIs com total de leads SEM filtro
-    render_kpis(metrics, total_leads_no_filter=total_leads_all_time)
-
-    st.divider()
-
-    # === ANÁLISE POR INBOX === [FASE 5 - NOVO]
+    # === ANÁLISE POR INBOX (MÉTRICAS CONSOLIDADAS) === [FASE 5]
+    # NOTA: Removida duplicação de KPIs - métricas agora aparecem apenas
+    #       na seção "Métricas Consolidadas" dentro da Análise por Inbox
     render_inbox_analysis(df)
 
     st.divider()
@@ -1919,14 +2672,19 @@ def show_client_dashboard(session, tenant_id=None):
 
     st.divider()
 
-    # Linha 2: Leads por inbox + Distribuição de Score (lado a lado)
-    col1, col2 = st.columns(2)
+    # Linha 2: Leads por inbox + Categorias + Distribuição de Score (3 colunas)
+    col1, col2, col3 = st.columns(3)
 
     with col1:
         leads_by_inbox = prepare_leads_by_inbox(df)
         render_leads_by_inbox_chart(leads_by_inbox)
 
     with col2:
+        # === CATEGORIAS DE CONVERSAS === [NOVO - 2025-11-19]
+        categories_data = prepare_conversation_categories(df)
+        render_categories_chart(categories_data)
+
+    with col3:
         score_dist = prepare_score_distribution(df)
         render_score_distribution_chart(score_dist)
 
@@ -1940,6 +2698,11 @@ def show_client_dashboard(session, tenant_id=None):
 
     # === TABELA DE LEADS ===
     render_leads_table(df, df_original, tenant_name, date_start, date_end)
+
+    st.divider()
+
+    # === ANÁLISE DE REMARKETING === [FASE 8 - NOVO]
+    render_remarketing_analysis_section(df, display_tenant_id)
 
     st.divider()
 

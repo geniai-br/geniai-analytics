@@ -109,6 +109,7 @@ jobs:
 
     - name: Check imports
       run: |
-        python -c "import sys; sys.path.insert(0, 'src'); from features.etl import extractor; print('✅ ETL imports OK')"
-        python -c "import sys; sys.path.insert(0, 'src'); from features.analyzers import rule_based; print('✅ Analyzers imports OK')"
-        python -c "import sys; sys.path.insert(0, 'src'); from features.crm import crossmatch; print('✅ CRM imports OK')"
+        python -c "import sys; sys.path.insert(0, 'src'); from multi_tenant.etl_v4.pipeline import ETLPipeline; print('✅ ETL V4 imports OK')"
+        python -c "import sys; sys.path.insert(0, 'src'); from multi_tenant.etl_v4.analyzers import AnalyzerFactory; print('✅ Analyzers imports OK')"
+        python -c "import sys; sys.path.insert(0, 'src'); from app.config import apply_custom_css; print('✅ App config imports OK')"
+        python -c "import sys; sys.path.insert(0, 'src'); from app.utils.metrics import calculate_conversation_categories; print('✅ App utils imports OK')"
