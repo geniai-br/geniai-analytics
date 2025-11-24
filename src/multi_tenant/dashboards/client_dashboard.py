@@ -396,6 +396,7 @@ def prepare_leads_by_inbox(df):
 def prepare_score_distribution(df):
     """
     Prepara dados de distribuição de score IA para gráfico de pizza
+    [DEPRECATED - Usar prepare_numeric_score_distribution para scores numéricos]
 
     Args:
         df: DataFrame com conversas
@@ -424,10 +425,57 @@ def prepare_score_distribution(df):
     return score_dist
 
 
+def prepare_numeric_score_distribution(df):
+    """
+    Prepara dados de distribuição de score numérico (0-5) para gráfico
+    [NOVO - 2025-11-24]
+
+    Args:
+        df: DataFrame com conversas
+
+    Returns:
+        pd.DataFrame: Distribuição de score de 5 a 0
+    """
+    if df.empty:
+        return pd.DataFrame(columns=['Score', 'Quantidade'])
+
+    # Filtrar apenas leads
+    leads_df = df[df['is_lead'] == True].copy()
+
+    if leads_df.empty:
+        return pd.DataFrame(columns=['Score', 'Quantidade'])
+
+    # Filtrar apenas leads com score_prioridade válido (não nulo)
+    leads_with_score = leads_df[leads_df['score_prioridade'].notna()].copy()
+
+    if leads_with_score.empty:
+        return pd.DataFrame(columns=['Score', 'Quantidade'])
+
+    # Agrupar por score
+    score_dist = leads_with_score.groupby('score_prioridade').size().reset_index(name='Quantidade')
+    score_dist.rename(columns={'score_prioridade': 'Score'}, inplace=True)
+
+    # Garantir que todos os scores de 5 a 0 apareçam (mesmo que com 0 leads)
+    all_scores = pd.DataFrame({'Score': [5, 4, 3, 2, 1, 0]})
+    score_dist = all_scores.merge(score_dist, on='Score', how='left').fillna(0)
+    score_dist['Quantidade'] = score_dist['Quantidade'].astype(int)
+
+    # Criar rótulo visual "5/5", "4/5", etc
+    score_dist['ScoreLabel'] = score_dist['Score'].apply(lambda x: f"{int(x)}/5")
+
+    # Ordenar de 5 para 0 (decrescente)
+    score_dist = score_dist.sort_values('Score', ascending=False)
+
+    return score_dist
+
+
 def prepare_period_distribution(df):
     """
     Prepara dados de distribuição de conversas por período do dia
-    [FASE 5.5 - NOVA FUNÇÃO]
+    [FASE 5.5 - ATUALIZADO 2025-11-24]
+
+    Calcula o período em runtime baseado em conversation_created_at
+    Períodos: Madrugada (0-5h), Manhã (6-11h), Tarde (12-17h), Noite (18-23h)
 
     Args:
         df: DataFrame com conversas
@@ -435,18 +483,54 @@ def prepare_period_distribution(df):
     Returns:
         pd.DataFrame: Distribuição por período (Manhã/Tarde/Noite/Madrugada)
     """
-    if df.empty or 'conversation_period' not in df.columns:
+    if df.empty:
         return pd.DataFrame(columns=['Período', 'Quantidade'])
 
-    # Filtrar períodos válidos (não nulos)
-    period_df = df[df['conversation_period'].notna()].copy()
+    # Verificar se existe coluna de timestamp
+    if 'conversation_created_at' not in df.columns:
+        return pd.DataFrame(columns=['Período', 'Quantidade'])
 
-    if period_df.empty:
+    # Filtrar conversas com timestamp válido
+    valid_df = df[df['conversation_created_at'].notna()].copy()
+
+    if valid_df.empty:
+        return pd.DataFrame(columns=['Período', 'Quantidade'])
+
+    # Converter para datetime se necessário
+    if not pd.api.types.is_datetime64_any_dtype(valid_df['conversation_created_at']):
+        valid_df['conversation_created_at'] = pd.to_datetime(valid_df['conversation_created_at'])
+
+    # Extrair hora (0-23)
+    valid_df['hora'] = valid_df['conversation_created_at'].dt.hour
+
+    # Calcular período baseado na hora
+    def get_period(hour):
+        """
+        Determina período do dia baseado na hora
+        Madrugada: 0-5h, Manhã: 6-11h, Tarde: 12-17h, Noite: 18-23h
+        """
+        if pd.isna(hour):
+            return None
+        if 0 <= hour <= 5:
+            return 'Madrugada'
+        elif 6 <= hour <= 11:
+            return 'Manhã'
+        elif 12 <= hour <= 17:
+            return 'Tarde'
+        else:  # 18-23
+            return 'Noite'
+
+    valid_df['periodo_calculado'] = valid_df['hora'].apply(get_period)
+
+    # Remover valores nulos
+    valid_df = valid_df[valid_df['periodo_calculado'].notna()]
+
+    if valid_df.empty:
         return pd.DataFrame(columns=['Período', 'Quantidade'])
 
     # Agrupar por período
-    period_dist = period_df.groupby('conversation_period').size().reset_index(name='Quantidade')
-    period_dist.rename(columns={'conversation_period': 'Período'}, inplace=True)
+    period_dist = valid_df.groupby('periodo_calculado').size().reset_index(name='Quantidade')
+    period_dist.rename(columns={'periodo_calculado': 'Período'}, inplace=True)
 
     # Ordenar por ordem lógica dos períodos
     period_order = {'Manhã': 1, 'Tarde': 2, 'Noite': 3, 'Madrugada': 4}
@@ -558,6 +642,76 @@ def prepare_csv_export(df):
     # Formatar status
     status_map = {0: 'Aberta', 1: 'Resolvida', 2: 'Pendente'}
     export_df['Status'] = export_df['Status'].map(status_map)
+
+    # Converter para CSV
+    csv_buffer = io.StringIO()
+    export_df.to_csv(csv_buffer, index=False, encoding='utf-8-sig')  # utf-8-sig para Excel
+    return csv_buffer.getvalue()
+
+
+def prepare_ai_analysis_csv_export(df):
+    """
+    Prepara dados para exportação CSV de leads com análise IA completa
+    [NOVO - 2025-11-24]
+
+    Filtra apenas leads que possuem AMBOS:
+    - analise_ia (análise de IA preenchida)
+    - sugestao_disparo (sugestão de remarketing preenchida)
+
+    Args:
+        df: DataFrame com conversas
+
+    Returns:
+        str: CSV formatado como string, ou None se não houver dados
+    """
+    if df.empty:
+        return None
+
+    # Filtrar apenas leads
+    leads_df = df[df['is_lead'] == True].copy()
+
+    if leads_df.empty:
+        return None
+
+    # Filtrar leads com análise IA E sugestão de disparo (ambos preenchidos)
+    leads_with_ai = leads_df[
+        (leads_df['analise_ia'].notna()) &
+        (leads_df['analise_ia'] != '') &
+        (leads_df['sugestao_disparo'].notna()) &
+        (leads_df['sugestao_disparo'] != '')
+    ].copy()
+
+    if leads_with_ai.empty:
+        return None
+
+    # Selecionar colunas essenciais (mais diretas)
+    export_df = leads_with_ai[[
+        'conversation_display_id',
+        'contact_name',
+        'contact_phone',
+        'inbox_name',
+        'conversation_date',
+        'score_prioridade',
+        'analise_ia',
+        'sugestao_disparo'
+    ]].copy()
+
+    # Renomear colunas para português
+    export_df.columns = [
+        'ID Conversa',
+        'Nome',
+        'Telefone',
+        'Inbox',
+        'Data',
+        'Score (0-5)',
+        'Análise IA',
+        'Sugestão de Disparo'
+    ]
+
+    # Formatar score (garantir que seja numérico)
+    export_df['Score (0-5)'] = export_df['Score (0-5)'].apply(
+        lambda x: f"{int(x)}/5" if pd.notna(x) else 'N/A'
+    )
 
     # Converter para CSV
     csv_buffer = io.StringIO()
@@ -811,6 +965,21 @@ def render_leads_chart(leads_by_day, df_full=None):
             hovertemplate=f'<b>{x_title}:</b> %{{x}}<br><b>Leads:</b> %{{y}}<extra></extra>'
         )
 
+        # [NOVO - 2025-11-24] Adicionar linha horizontal com a média
+        media_leads = chart_data['Leads'].mean()
+        fig.add_hline(
+            y=media_leads,
+            line_dash="dash",
+            line_color="red",
+            line_width=2,
+            annotation_text=f"Média: {media_leads:.1f}",
+            annotation_position="right",
+            annotation=dict(
+                font=dict(size=12, color="red"),
+                showarrow=False
+            )
+        )
+
         num_bars = len(chart_data)
         rotate_labels = num_bars > 30
 
@@ -964,6 +1133,14 @@ def render_leads_by_inbox_chart(leads_by_inbox):
 def render_score_distribution_chart(score_dist):
     """
     Renderiza gráfico de distribuição de score IA
+    [DEPRECATED - 2025-11-24]
+
+    Esta função foi substituída por render_numeric_score_chart() que usa scores numéricos (0-5)
+    ao invés de classificações Alto/Médio/Baixo.
+
+    Motivo: O sistema de remarketing agora usa score_prioridade (0-5) ao invés de
+    ai_probability_label (Alto/Médio/Baixo). Esta função não está mais sendo chamada
+    no dashboard e pode ser removida em futuras versões.
 
     Args:
         score_dist: DataFrame com distribui��ão de scores
@@ -991,6 +1168,73 @@ def render_score_distribution_chart(score_dist):
 # REMOVIDO: render_quality_metrics() - Arquivada em _archived/quality_metrics_removed.py
 # Data: 2025-11-11
 # Motivo: Simplificação do dashboard (métricas de qualidade não essenciais)
+
+
+def render_numeric_score_chart(score_dist):
+    """
+    Renderiza gráfico de distribuição de score numérico (5/5 a 0/5)
+    [NOVO - 2025-11-24]
+
+    Args:
+        score_dist: DataFrame com distribuição de scores numéricos
+    """
+    if score_dist.empty:
+        st.info("ℹ️ Nenhum lead com score numérico para exibir")
+        return
+
+    st.subheader("⭐ Distribuição de Scores (0-5)")
+
+    import plotly.graph_objects as go
+
+    # Criar gráfico de barras
+    fig = go.Figure()
+
+    fig.add_trace(go.Bar(
+        x=score_dist['ScoreLabel'],
+        y=score_dist['Quantidade'],
+        marker=dict(
+            color=['#4CAF50' if s == 5 else '#8BC34A' if s == 4 else '#FFC107' if s == 3
+                   else '#FF9800' if s == 2 else '#FF5722' if s == 1 else '#9E9E9E'
+                   for s in score_dist['Score']],
+            line=dict(color='rgba(255,255,255,0.2)', width=1)
+        ),
+        text=score_dist['Quantidade'],
+        textposition='outside',
+        hovertemplate='<b>Score %{x}</b><br>Quantidade: %{y}<extra></extra>'
+    ))
+
+    fig.update_layout(
+        showlegend=False,
+        xaxis=dict(
+            showgrid=False,
+            title='Score de Prioridade',
+            tickangle=0
+        ),
+        yaxis=dict(
+            showgrid=True,
+            gridcolor='rgba(0,0,0,0.1)',
+            title='Quantidade de Leads'
+        ),
+        height=350,
+        margin=dict(l=10, r=10, t=40, b=60)
+    )
+
+    config = {
+        'displayModeBar': False,
+        'displaylogo': False
+    }
+
+    st.plotly_chart(fig, use_container_width=True, config=config)
+
+    # Resumo em colunas
+    total_com_score = score_dist['Quantidade'].sum()
+    score_medio = (score_dist['Score'] * score_dist['Quantidade']).sum() / total_com_score if total_com_score > 0 else 0
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Total com Score", format_number(total_com_score))
+    with col2:
+        st.metric("Score Médio", f"{score_medio:.1f}/5")
 
 
 def render_categories_chart(categories_data):
@@ -1363,7 +1607,7 @@ def render_inbox_analysis(df):
     Args:
         df: DataFrame com conversas
     """
-    st.subheader("📬 Análise por Inbox")
+    st.markdown("# 📬 Análise por Inbox")
 
     if df.empty:
         st.info("ℹ️ Nenhum dado disponível para análise por inbox")
@@ -1384,7 +1628,7 @@ def render_inbox_analysis(df):
 
     if view_mode == "📊 Visão Agregada (Consolidado)":
         # === VISÃO AGREGADA ===
-        st.markdown("#### 📊 Métricas Consolidadas (Todas as Inboxes)")
+        st.markdown("# 📊 Métricas Consolidadas (Todas as Inboxes)")
 
         # Métricas principais em 4 colunas
         col1, col2, col3, col4 = st.columns(4)
@@ -1431,7 +1675,7 @@ def render_inbox_analysis(df):
         st.divider()
 
         # Gráfico de distribuição por inbox
-        st.markdown("#### 📊 Distribuição de Conversas por Inbox")
+        st.markdown("# 📊 Distribuição de Conversas por Inbox")
 
         if not inbox_metrics.empty:
             # Gráfico de barras horizontal
@@ -1452,7 +1696,7 @@ def render_inbox_analysis(df):
 
     else:
         # === VISÃO SEPARADA (POR INBOX) ===
-        st.markdown("#### 📋 Métricas Individuais por Inbox")
+        st.markdown("# 📋 Métricas Individuais por Inbox")
 
         if inbox_metrics.empty:
             st.info("ℹ️ Nenhuma inbox encontrada")
@@ -1493,7 +1737,7 @@ def render_inbox_analysis(df):
         st.divider()
 
         # Cards individuais por inbox (top 3)
-        st.markdown("#### 🏆 Top 3 Inboxes (por volume)")
+        st.markdown("# 🏆 Top 3 Inboxes (por volume)")
 
         top3 = inbox_metrics.head(3)
 
@@ -1536,29 +1780,28 @@ def render_leads_table(df, df_original, tenant_name, date_start, date_end):
     col1, col2 = st.columns([3, 1])
 
     with col1:
-        st.subheader("📋 Tabela de Leads")
+        st.markdown("# 📋 Tabela de Leads")
 
     with col2:
-        # Botão de exportação CSV
+        # Botão de exportação CSV (completo)
         csv_data = prepare_csv_export(df)
         if csv_data:
             # Gerar nome do arquivo
             filename = f"leads_{tenant_name.lower().replace(' ', '_')}_{date_start.strftime('%Y%m%d')}_{date_end.strftime('%Y%m%d')}.csv"
 
             st.download_button(
-                label="📥 Exportar CSV",
+                label="📥 Export Completo",
                 data=csv_data,
                 file_name=filename,
                 mime="text/csv",
-                use_container_width=True
+                use_container_width=True,
+                help="Exportar todos os leads com todas as colunas"
             )
         else:
-            st.button("📥 Exportar CSV", disabled=True, use_container_width=True, help="Nenhum lead para exportar")
-
-    st.divider()
+            st.button("📥 Export Completo", disabled=True, use_container_width=True, help="Nenhum lead para exportar")
 
     # === FILTROS RÁPIDOS === [FASE 4]
-    st.markdown("#### 🔍 Filtros Rápidos")
+    st.markdown("## 🔍 Filtros Rápidos")
 
     # 6 colunas horizontais
     col_f1, col_f2, col_f3, col_f4, col_f5, col_f6 = st.columns(6)
@@ -1966,7 +2209,7 @@ def format_score_numerico(score):
     return str(score)
 
 
-def render_remarketing_analysis_section(df, tenant_id):
+def render_remarketing_analysis_section(df, tenant_id, tenant_slug='tenant'):
     """
     Renderiza seção de Análise de Remarketing (FASE 8)
 
@@ -1980,8 +2223,9 @@ def render_remarketing_analysis_section(df, tenant_id):
     Args:
         df: DataFrame com conversas (já filtrado)
         tenant_id: ID do tenant
+        tenant_slug: Slug do tenant (para nome do arquivo CSV)
     """
-    st.subheader("🤖 Análise de Remarketing (Leads Inativos 24h+)")
+    st.markdown("# 🤖 Análise de Remarketing")
 
     if df.empty:
         st.info("ℹ️ Nenhum dado disponível para análise de remarketing")
@@ -2002,29 +2246,71 @@ def render_remarketing_analysis_section(df, tenant_id):
     aguardando_24h = len(leads_df[(leads_df['horas_inativo'] >= 24) & (leads_df['analisado_em'].isna())])
     ativos = len(leads_df[leads_df['horas_inativo'] < 24])
 
-    # === CARDS DE RESUMO ===
-    col1, col2, col3 = st.columns(3)
+    # === LAYOUT COMPACTO: CARDS + GRÁFICO === [OTIMIZADO - 2025-11-24]
+    # Coluna 1 (30%): Cards de resumo de análise de remarketing
+    # Coluna 2 (70%): Gráfico de distribuição de scores
+    col_cards, col_graph = st.columns([0.3, 0.7])
 
-    with col1:
+    with col_cards:
+        st.markdown("**📊 Análise de Remarketing**")
+        st.caption("Leads inativos 24h+")
+
         st.metric(
             "✅ Analisados",
             format_number(analisados),
             help="Leads inativos 24h+ com análise de remarketing"
         )
 
-    with col2:
         st.metric(
             "⏳ Aguardando 24h",
             format_number(aguardando_24h),
             help="Leads inativos 24h+ sem análise (serão analisados no próximo ETL)"
         )
 
-    with col3:
         st.metric(
             "🔄 Ativos",
             format_number(ativos),
             help="Leads com última msg < 24h (janela de follow-up manual)"
         )
+
+    with col_graph:
+        # === GRÁFICO DE DISTRIBUIÇÃO DE SCORES === [MOVIDO - 2025-11-24]
+        numeric_score_dist = prepare_numeric_score_distribution(df)
+        render_numeric_score_chart(numeric_score_dist)
+
+    st.divider()
+
+    # === BOTÃO DE EXPORT ANÁLISE IA === [NOVO - 2025-11-24]
+    col_export_label, col_export_btn = st.columns([3, 1])
+
+    with col_export_label:
+        st.markdown("**📥 Exportar Leads com Análise IA:**")
+        st.caption("Baixe um CSV com apenas os leads que possuem análise IA e sugestão de disparo completas")
+
+    with col_export_btn:
+        # Preparar dados de export
+        ai_csv_data = prepare_ai_analysis_csv_export(df)
+        if ai_csv_data:
+            # Gerar nome do arquivo
+            from datetime import datetime
+            today = datetime.now().strftime('%Y%m%d')
+            ai_filename = f"leads_analise_ia_{tenant_slug}_{today}.csv"
+
+            st.download_button(
+                label="📥 Export Análise IA",
+                data=ai_csv_data,
+                file_name=ai_filename,
+                mime="text/csv",
+                use_container_width=True,
+                help="Exportar leads com análise IA e sugestão de disparo"
+            )
+        else:
+            st.button(
+                "📥 Export Análise IA",
+                disabled=True,
+                use_container_width=True,
+                help="Nenhum lead com análise IA completa para exportar"
+            )
 
     st.divider()
 
@@ -2067,8 +2353,6 @@ def render_remarketing_analysis_section(df, tenant_id):
             )
         else:
             st.success("✅ Todos os leads inativos (24h+) foram analisados!")
-
-    st.divider()
 
     # === APLICAR FILTROS ===
     leads_display = leads_df.copy()
@@ -2664,7 +2948,7 @@ def show_client_dashboard(session, tenant_id=None):
     st.divider()
 
     # === GRÁFICOS ===
-    st.subheader("📊 Análise de Leads")
+    st.markdown("# 📊 Análise de Leads")
 
     # Linha 1: Leads por dia (largura completa)
     leads_by_day = prepare_leads_by_day(df)
@@ -2672,8 +2956,9 @@ def show_client_dashboard(session, tenant_id=None):
 
     st.divider()
 
-    # Linha 2: Leads por inbox + Categorias + Distribuição de Score (3 colunas)
-    col1, col2, col3 = st.columns(3)
+    # Linha 2: Leads por inbox + Categorias (2 colunas)
+    # [MOVIDO - 2025-11-24] Distribuição de scores foi movida para seção de remarketing
+    col1, col2 = st.columns(2)
 
     with col1:
         leads_by_inbox = prepare_leads_by_inbox(df)
@@ -2683,10 +2968,6 @@ def show_client_dashboard(session, tenant_id=None):
         # === CATEGORIAS DE CONVERSAS === [NOVO - 2025-11-19]
         categories_data = prepare_conversation_categories(df)
         render_categories_chart(categories_data)
-
-    with col3:
-        score_dist = prepare_score_distribution(df)
-        render_score_distribution_chart(score_dist)
 
     st.divider()
 
@@ -2702,7 +2983,7 @@ def show_client_dashboard(session, tenant_id=None):
     st.divider()
 
     # === ANÁLISE DE REMARKETING === [FASE 8 - NOVO]
-    render_remarketing_analysis_section(df, display_tenant_id)
+    render_remarketing_analysis_section(df, display_tenant_id, session['tenant_slug'])
 
     st.divider()
 
