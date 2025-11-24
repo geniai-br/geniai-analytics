@@ -249,6 +249,27 @@ class ConversationTransformer:
             if 'conversation_minute' not in df.columns:
                 df['conversation_minute'] = dt.dt.minute
 
+            # Calcular conversation_period baseado na hora
+            # [FASE 5.5 - Adicionado 2025-11-24]
+            if 'conversation_period' not in df.columns:
+                def get_period(hour):
+                    """
+                    Determina período do dia baseado na hora.
+                    Madrugada: 0-5h, Manhã: 6-11h, Tarde: 12-17h, Noite: 18-23h
+                    """
+                    if pd.isna(hour):
+                        return None
+                    if 0 <= hour <= 5:
+                        return 'Madrugada'
+                    elif 6 <= hour <= 11:
+                        return 'Manhã'
+                    elif 12 <= hour <= 17:
+                        return 'Tarde'
+                    else:  # 18-23
+                        return 'Noite'
+
+                df['conversation_period'] = dt.dt.hour.apply(get_period)
+
         # Calcular first_response_time_minutes a partir de seconds
         if 'first_response_time_seconds' in df.columns and 'first_response_time_minutes' not in df.columns:
             df['first_response_time_minutes'] = (
