@@ -123,6 +123,7 @@ class RemoteExtractor:
             ...     print(f"Processando {len(chunk)} conversas")
         """
         # Query base
+        # OTIMIZADO 2025-11-25: Removidas colunas sempre NULL (campaign_id, contact_email, csat_*)
         query = """
             SELECT
                 -- Identificadores
@@ -134,7 +135,6 @@ class RemoteExtractor:
                 contact_id,
                 assignee_id,
                 team_id,
-                campaign_id,
 
                 -- Timestamps
                 conversation_created_at,
@@ -147,7 +147,6 @@ class RemoteExtractor:
 
                 -- Informações de contato
                 contact_name,
-                contact_email,
                 COALESCE(contact_phone, client_phone) as contact_phone,
                 contact_identifier,
 
@@ -176,11 +175,6 @@ class RemoteExtractor:
                 has_team,
                 has_human_intervention,
                 is_bot_resolved,
-
-                -- CSAT
-                csat_rating,
-                csat_feedback,
-                csat_nps_category,
 
                 -- Métricas temporais
                 first_response_time_seconds,

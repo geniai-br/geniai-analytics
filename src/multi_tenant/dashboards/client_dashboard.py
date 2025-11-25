@@ -9,8 +9,8 @@ import pandas as pd
 from datetime import datetime, timedelta
 from pathlib import Path
 import sys
-from sqlalchemy import text
 import io
+from sqlalchemy import text
 
 # Adicionar src ao path
 src_path = str(Path(__file__).parent.parent.parent)
@@ -45,6 +45,7 @@ def load_conversations(tenant_id, date_start=None, date_end=None, inbox_filter=N
     set_rls_context(engine, tenant_id, tenant_id)  # Usar tenant_id como user_id temporário
 
     # Query base (RLS filtra automaticamente por tenant_id)
+    # OTIMIZADO 2025-11-25: Removidas colunas não utilizadas (is_weekday, is_business_hours, contact_email)
     query = """
         SELECT
             id,
@@ -52,10 +53,9 @@ def load_conversations(tenant_id, date_start=None, date_end=None, inbox_filter=N
             display_id as conversation_display_id,
             inbox_id,
             inbox_name,
-            contact_id,  -- [FASE 7.2 - NOVO: Para contar leads únicos]
+            contact_id,
             contact_name,
             contact_phone,
-            contact_email,
             DATE(conversation_created_at) as conversation_date,
             conversation_created_at,
             t_messages as total_messages,
@@ -72,15 +72,11 @@ def load_conversations(tenant_id, date_start=None, date_end=None, inbox_filter=N
             is_resolved,
             first_response_time_minutes,
             conversation_period,
-            is_weekday,
-            is_business_hours,
             etl_updated_at as synced_at,
-            -- Colunas Genéricas Multi-Tenant
             nome_mapeado_bot,
             mc_first_message_at as primeiro_contato,
             mc_last_message_at as ultimo_contato,
             message_compiled as conversa_compilada,
-            -- FASE 8: Colunas de Análise de Remarketing
             tipo_conversa,
             analise_ia,
             sugestao_disparo,
@@ -123,36 +119,6 @@ def load_conversations(tenant_id, date_start=None, date_end=None, inbox_filter=N
     return df
 
 
-def get_total_leads_count(tenant_id):
-    """
-    Retorna contagem TOTAL de leads únicos do tenant (SEM filtro de data)
-    Para exibir no card de métricas
-
-    DEFINIÇÃO DE LEAD: Contatos com is_lead=TRUE (probabilidade IA >= 2)
-    Não inclui contatos que apenas entraram em contato mas não foram qualificados pela IA
-
-    Args:
-        tenant_id: ID do tenant
-
-    Returns:
-        int: Número de leads únicos (contatos com is_lead=TRUE)
-    """
-    engine = get_database_engine()
-
-    # IMPORTANTE: Filtro explícito de tenant_id necessário (RLS não está filtrando sozinho)
-    query = text("""
-        SELECT COUNT(DISTINCT contact_id) as total_leads
-        FROM conversations_analytics
-        WHERE tenant_id = :tenant_id
-          AND is_lead = TRUE
-          AND contact_id IS NOT NULL
-    """)
-
-    with engine.connect() as conn:
-        result = conn.execute(query, {'tenant_id': tenant_id}).fetchone()
-        return result[0] if result else 0
-
-
 def get_tenant_info(tenant_id):
     """
     Retorna informações do tenant
@@ -191,40 +157,6 @@ def get_tenant_info(tenant_id):
             }
 
         return None
-
-
-def get_tenant_inboxes(tenant_id):
-    """
-    Retorna lista de inboxes do tenant
-
-    Args:
-        tenant_id: ID do tenant
-
-    Returns:
-        list[dict]: Lista de inboxes com id e name
-    """
-    engine = get_database_engine()
-
-    query = text("""
-        SELECT DISTINCT
-            itm.inbox_id,
-            itm.inbox_name
-        FROM inbox_tenant_mapping itm
-        WHERE itm.tenant_id = :tenant_id
-        ORDER BY itm.inbox_name
-    """)
-
-    with engine.connect() as conn:
-        result = conn.execute(query, {'tenant_id': tenant_id})
-        inboxes = []
-
-        for row in result:
-            inboxes.append({
-                'id': row.inbox_id,
-                'name': row.inbox_name
-            })
-
-        return inboxes
 
 
 # ============================================================================
@@ -391,38 +323,6 @@ def prepare_leads_by_inbox(df):
     leads_by_inbox = leads_by_inbox.sort_values('Leads', ascending=False)
 
     return leads_by_inbox
-
-
-def prepare_score_distribution(df):
-    """
-    Prepara dados de distribuição de score IA para gráfico de pizza
-    [DEPRECATED - Usar prepare_numeric_score_distribution para scores numéricos]
-
-    Args:
-        df: DataFrame com conversas
-
-    Returns:
-        pd.DataFrame: Distribuição de score IA
-    """
-    if df.empty:
-        return pd.DataFrame(columns=['Classificação', 'Quantidade'])
-
-    # Filtrar apenas leads com classificação
-    leads_df = df[df['is_lead'] == True].copy()
-
-    if leads_df.empty:
-        return pd.DataFrame(columns=['Classificação', 'Quantidade'])
-
-    # Agrupar por classificação IA
-    score_dist = leads_df.groupby('ai_probability_label').size().reset_index(name='Quantidade')
-    score_dist.rename(columns={'ai_probability_label': 'Classificação'}, inplace=True)
-
-    # Ordenar por ordem de prioridade (Alto > Médio > Baixo > N/A)
-    order = {'Alto': 1, 'Médio': 2, 'Baixo': 3, 'N/A': 4}
-    score_dist['_order'] = score_dist['Classificação'].map(order)
-    score_dist = score_dist.sort_values('_order').drop('_order', axis=1)
-
-    return score_dist
 
 
 def prepare_numeric_score_distribution(df):
@@ -597,11 +497,11 @@ def prepare_csv_export(df):
         return None
 
     # Selecionar e renomear colunas para exportação
+    # OTIMIZADO 2025-11-25: Removida coluna contact_email (sempre NULL)
     export_df = leads_df[[
         'conversation_display_id',
         'contact_name',
         'contact_phone',
-        'contact_email',
         'inbox_name',
         'conversation_date',
         'is_lead',
@@ -620,7 +520,6 @@ def prepare_csv_export(df):
         'ID Conversa',
         'Nome Contato',
         'Telefone',
-        'Email',
         'Inbox',
         'Data',
         'Lead',
@@ -1128,46 +1027,6 @@ def render_leads_by_inbox_chart(leads_by_inbox):
 
     st.subheader("📊 Leads por Inbox")
     st.bar_chart(leads_by_inbox.set_index('Inbox')['Leads'], use_container_width=True)
-
-
-def render_score_distribution_chart(score_dist):
-    """
-    Renderiza gráfico de distribuição de score IA
-    [DEPRECATED - 2025-11-24]
-
-    Esta função foi substituída por render_numeric_score_chart() que usa scores numéricos (0-5)
-    ao invés de classificações Alto/Médio/Baixo.
-
-    Motivo: O sistema de remarketing agora usa score_prioridade (0-5) ao invés de
-    ai_probability_label (Alto/Médio/Baixo). Esta função não está mais sendo chamada
-    no dashboard e pode ser removida em futuras versões.
-
-    Args:
-        score_dist: DataFrame com distribui��ão de scores
-    """
-    if score_dist.empty:
-        st.info("ℹ️ Nenhum lead com classificação para exibir")
-        return
-
-    st.subheader("🎯 Distribuição de Classificação IA")
-
-    # Usar colunas para melhor layout
-    col1, col2 = st.columns([2, 1])
-
-    with col1:
-        # Gráfico de barras horizontal
-        st.bar_chart(score_dist.set_index('Classificação')['Quantidade'], use_container_width=True)
-
-    with col2:
-        # Tabela resumo
-        st.write("**Resumo:**")
-        for _, row in score_dist.iterrows():
-            st.write(f"- **{row['Classificação']}**: {row['Quantidade']} leads")
-
-
-# REMOVIDO: render_quality_metrics() - Arquivada em _archived/quality_metrics_removed.py
-# Data: 2025-11-11
-# Motivo: Simplificação do dashboard (métricas de qualidade não essenciais)
 
 
 def render_numeric_score_chart(score_dist):
