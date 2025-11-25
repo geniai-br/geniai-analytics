@@ -68,35 +68,147 @@ class RemoteExtractor:
 
     def get_tenant_inbox_ids(self, local_engine: Engine, tenant_id: int) -> List[int]:
         """
-        Busca inbox_ids de um tenant no banco local.
+        Busca inbox_ids de um tenant, sincronizando automaticamente com o Chatwoot.
+
+        Este método:
+        1. Busca o account_id do tenant no banco local
+        2. Consulta o Chatwoot para obter todas as inboxes desse account
+        3. Atualiza automaticamente inbox_tenant_mapping e tenants.inbox_ids
+        4. Retorna a lista atualizada de inbox_ids
 
         Args:
             local_engine: Engine do banco local
             tenant_id: ID do tenant
 
         Returns:
-            Lista de inbox_ids
+            Lista de inbox_ids (atualizada)
 
         Raises:
-            ValueError: Se tenant não possui inboxes
+            ValueError: Se tenant não possui account_id configurado
         """
-        query = text("""
-            SELECT inbox_id
-            FROM inbox_tenant_mapping
-            WHERE tenant_id = :tenant_id
-              AND is_active = TRUE
-            ORDER BY inbox_id
+        # 1. Buscar account_id do tenant
+        account_query = text("""
+            SELECT account_id, name
+            FROM tenants
+            WHERE id = :tenant_id
+              AND status = 'active'
+              AND deleted_at IS NULL
         """)
 
         with local_engine.connect() as conn:
-            result = conn.execute(query, {'tenant_id': tenant_id})
-            inbox_ids = [row[0] for row in result]
+            result = conn.execute(account_query, {'tenant_id': tenant_id}).fetchone()
 
-        if not inbox_ids:
-            raise ValueError(f"Tenant {tenant_id} não possui inboxes ativos")
+        if not result:
+            raise ValueError(f"Tenant {tenant_id} não encontrado ou não está ativo")
 
-        logger.info(f"Tenant {tenant_id}: {len(inbox_ids)} inboxes encontrados: {inbox_ids}")
+        account_id, tenant_name = result[0], result[1]
+
+        if not account_id:
+            raise ValueError(f"Tenant {tenant_id} ({tenant_name}) não possui account_id configurado")
+
+        # 2. Buscar todas as inboxes desse account no Chatwoot
+        logger.info(f"Sincronizando inboxes do tenant {tenant_id} ({tenant_name}) - account_id: {account_id}")
+
+        chatwoot_inboxes = self._get_inboxes_from_chatwoot(account_id)
+
+        if not chatwoot_inboxes:
+            raise ValueError(f"Nenhuma inbox encontrada no Chatwoot para account_id {account_id}")
+
+        # 3. Sincronizar com o banco local
+        self._sync_inboxes_to_local(local_engine, tenant_id, chatwoot_inboxes)
+
+        # 4. Retornar lista de inbox_ids
+        inbox_ids = [inbox['inbox_id'] for inbox in chatwoot_inboxes]
+        logger.info(f"Tenant {tenant_id}: {len(inbox_ids)} inboxes sincronizadas: {inbox_ids}")
+
         return inbox_ids
+
+    def _get_inboxes_from_chatwoot(self, account_id: int) -> List[Dict]:
+        """
+        Busca todas as inboxes de um account_id no Chatwoot.
+
+        Args:
+            account_id: ID da conta no Chatwoot
+
+        Returns:
+            Lista de dicts com inbox_id, inbox_name, channel_type
+        """
+        query = text("""
+            SELECT DISTINCT
+                inbox_id,
+                inbox_name,
+                COALESCE(inbox_channel_type, 'WhatsApp') as channel_type
+            FROM vw_conversations_analytics_final
+            WHERE account_id = :account_id
+            ORDER BY inbox_id
+        """)
+
+        try:
+            with self.remote_engine.connect() as conn:
+                result = conn.execute(query, {'account_id': account_id})
+                inboxes = [
+                    {
+                        'inbox_id': row[0],
+                        'inbox_name': row[1],
+                        'channel_type': row[2]
+                    }
+                    for row in result
+                ]
+
+            logger.info(f"Chatwoot account {account_id}: {len(inboxes)} inboxes encontradas")
+            return inboxes
+
+        except Exception as e:
+            logger.error(f"Erro ao buscar inboxes do Chatwoot (account_id={account_id}): {str(e)}")
+            raise
+
+    def _sync_inboxes_to_local(self, local_engine: Engine, tenant_id: int, inboxes: List[Dict]) -> None:
+        """
+        Sincroniza inboxes do Chatwoot com o banco local.
+
+        Atualiza:
+        - inbox_tenant_mapping: adiciona novas inboxes
+        - tenants.inbox_ids: atualiza array de inbox_ids
+
+        Args:
+            local_engine: Engine do banco local
+            tenant_id: ID do tenant
+            inboxes: Lista de inboxes do Chatwoot
+        """
+        inbox_ids = [inbox['inbox_id'] for inbox in inboxes]
+
+        with local_engine.begin() as conn:
+            # Atualizar inbox_tenant_mapping (UPSERT)
+            for inbox in inboxes:
+                upsert_query = text("""
+                    INSERT INTO inbox_tenant_mapping (inbox_id, tenant_id, inbox_name, channel_type, is_active, updated_at)
+                    VALUES (:inbox_id, :tenant_id, :inbox_name, :channel_type, true, NOW())
+                    ON CONFLICT (inbox_id) DO UPDATE SET
+                        tenant_id = EXCLUDED.tenant_id,
+                        inbox_name = EXCLUDED.inbox_name,
+                        channel_type = EXCLUDED.channel_type,
+                        is_active = true,
+                        updated_at = NOW()
+                """)
+                conn.execute(upsert_query, {
+                    'inbox_id': inbox['inbox_id'],
+                    'tenant_id': tenant_id,
+                    'inbox_name': inbox['inbox_name'],
+                    'channel_type': inbox['channel_type']
+                })
+
+            # Atualizar tenants.inbox_ids
+            update_tenant_query = text("""
+                UPDATE tenants
+                SET inbox_ids = :inbox_ids, updated_at = NOW()
+                WHERE id = :tenant_id
+            """)
+            conn.execute(update_tenant_query, {
+                'inbox_ids': inbox_ids,
+                'tenant_id': tenant_id
+            })
+
+        logger.info(f"Tenant {tenant_id}: inboxes sincronizadas com sucesso")
 
     def extract_conversations(
         self,
