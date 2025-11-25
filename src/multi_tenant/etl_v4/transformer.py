@@ -156,10 +156,11 @@ class ConversationTransformer:
             df['conversation_uuid'] = df['conversation_uuid'].astype(str)
 
         # Converter inteiros (preencher NaN com None para PostgreSQL)
+        # OTIMIZADO 2025-11-25: Removidas colunas sempre NULL (campaign_id, csat_rating)
         integer_cols = [
             'conversation_id', 'display_id', 'account_id', 'inbox_id',
-            'contact_id', 'assignee_id', 'team_id', 'campaign_id',
-            'status', 'priority', 'csat_rating',
+            'contact_id', 'assignee_id', 'team_id',
+            'status', 'priority',
             'first_response_time_seconds', 'resolution_time_seconds'
         ]
 
@@ -183,9 +184,9 @@ class ConversationTransformer:
             df['private_notes_count'] = pd.to_numeric(df['private_notes_count'], errors='coerce').fillna(0).astype(int)
 
         # Converter strings (truncar se necessário)
+        # OTIMIZADO 2025-11-25: Removidas colunas sempre NULL (contact_email, csat_nps_category)
         string_cols = {
             'contact_name': 255,
-            'contact_email': 255,
             'contact_phone': 50,
             'contact_identifier': 255,
             'inbox_name': 255,
@@ -193,7 +194,6 @@ class ConversationTransformer:
             'account_name': 255,
             'status_label': 50,
             'priority_label': 20,
-            'csat_nps_category': 50,
         }
 
         for col, max_len in string_cols.items():
@@ -338,6 +338,7 @@ class ConversationTransformer:
         Returns:
             Dicionário com mapeamento {coluna_local: coluna_remota}
         """
+        # OTIMIZADO 2025-11-25: Removidas colunas sempre NULL (campaign_id, contact_email, csat_*)
         return {
             # Identificadores
             'tenant_id': 'tenant_id',  # Adicionado pelo transformer
@@ -351,12 +352,10 @@ class ConversationTransformer:
             'inbox_channel_type': 'inbox_channel_type',
             'contact_id': 'contact_id',
             'contact_name': 'contact_name',
-            'contact_email': 'contact_email',
             'contact_phone': 'contact_phone',
             'contact_identifier': 'contact_identifier',
             'assignee_id': 'assignee_id',
             'team_id': 'team_id',
-            'campaign_id': 'campaign_id',
 
             # Timestamps
             'conversation_created_at': 'conversation_created_at',
@@ -390,11 +389,6 @@ class ConversationTransformer:
             'first_response_time_seconds': 'first_response_time_seconds',
             'resolution_time_seconds': 'resolution_time_seconds',
             'conversation_duration_seconds': 'conversation_duration_seconds',
-
-            # CSAT
-            'csat_rating': 'csat_rating',
-            'csat_feedback': 'csat_feedback',
-            'csat_nps_category': 'csat_nps_category',
 
             # Mensagens
             'first_message_text': 'first_message_text',
