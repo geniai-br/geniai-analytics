@@ -34,7 +34,6 @@ from src.multi_tenant.etl_v4.extractor import RemoteExtractor
 from src.multi_tenant.etl_v4.transformer import ConversationTransformer
 from src.multi_tenant.etl_v4.loader import ConversationLoader
 from src.multi_tenant.etl_v4.watermark_manager import WatermarkManager
-from src.multi_tenant.etl_v4.inbox_sync import InboxSyncManager
 from src.multi_tenant.etl_v4.remarketing_analyzer import (
     detect_and_reset_reopened_conversations,
     analyze_inactive_leads
@@ -186,35 +185,10 @@ class ETLPipeline:
             logger.info(f"Tenant: {tenant_name} (ID: {tenant_id})")
             logger.info(f"Analyzer: {'OpenAI GPT-4o-mini' if use_openai else 'Regex (keywords)'}")
 
-            # 1.5. Sincronizar inboxes automaticamente
-            logger.info("")
-            logger.info("FASE 0: INBOX SYNC (Detecção Automática de Novos Inboxes)")
-            logger.info("-" * 80)
-
-            try:
-                inbox_sync_manager = InboxSyncManager(
-                    local_engine=self.local_engine,
-                    remote_engine=self.extractor.remote_engine
-                )
-                sync_result = inbox_sync_manager.sync_tenant_inboxes(
-                    tenant_id=tenant_id,
-                    tenant_name=tenant_name
-                )
-
-                if sync_result['new_inboxes']:
-                    logger.warning(
-                        f"🆕 {len(sync_result['new_inboxes'])} novo(s) inbox(es) adicionado(s): "
-                        f"{sync_result['new_inboxes']}"
-                    )
-                else:
-                    logger.info("✅ Nenhum inbox novo detectado")
-
-            except Exception as e:
-                logger.warning(f"⚠️  Falha na sincronização de inboxes: {e}")
-                logger.warning("   Continuando com inboxes cadastrados atualmente...")
-
-            logger.info("-" * 80)
-            logger.info("")
+            # 1.5. Sincronizar inboxes automaticamente (usa extractor.get_tenant_inbox_ids)
+            # A sincronização é feita automaticamente pelo extractor.get_tenant_inbox_ids()
+            # quando chamado em extract_by_tenant(), então removemos a FASE 0 separada
+            # para evitar duplicação de código
 
             # 2. Adquirir lock (evitar execução simultânea)
             logger.info("Adquirindo lock...")
