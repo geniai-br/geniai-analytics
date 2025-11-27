@@ -454,7 +454,7 @@ class CampaignService:
             params["variable_count"] = len(re.findall(r'\{\{\d+\}\}', template_text))
 
         if promotional_context is not None:
-            updates.append("promotional_context = :promotional_context::jsonb")
+            updates.append("promotional_context = CAST(:promotional_context AS jsonb)")
             params["promotional_context"] = json.dumps(promotional_context, ensure_ascii=False)
 
         if start_date is not None:

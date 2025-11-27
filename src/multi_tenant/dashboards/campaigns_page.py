@@ -47,10 +47,10 @@ from multi_tenant.campaigns import (
 # ============================================================================
 
 STATUS_DISPLAY = {
-    CampaignStatus.DRAFT: {"label": "Rascunho", "color": "#64748b", "icon": "📝"},
-    CampaignStatus.ACTIVE: {"label": "Ativa", "color": "#10B981", "icon": "🟢"},
-    CampaignStatus.PAUSED: {"label": "Pausada", "color": "#F59E0B", "icon": "⏸️"},
-    CampaignStatus.ENDED: {"label": "Encerrada", "color": "#EF4444", "icon": "⏹️"},
+    CampaignStatus.DRAFT: {"label": "Rascunho", "color": "#64748b", "icon": "RASCUNHO"},
+    CampaignStatus.ACTIVE: {"label": "Ativa", "color": "#10B981", "icon": "ATIVA"},
+    CampaignStatus.PAUSED: {"label": "Pausada", "color": "#F59E0B", "icon": "PAUSADA"},
+    CampaignStatus.ENDED: {"label": "Encerrada", "color": "#EF4444", "icon": "ENCERRADA"},
 }
 
 LEAD_STATUS_DISPLAY = {
@@ -93,7 +93,7 @@ CAMPAIGN_TYPES = {
     "reengagement": {
         "label": "🔄 Reengajamento",
         "description": "Reconquistar leads inativos que não fecharam",
-        "icon": "��",
+        "icon": "🔄",
         "suggested_template": "Oi, {{1}}!\n\n{{2}}\n{{3}}",
         "fields": [
             {"key": "motivo_contato", "label": "Motivo do Contato", "placeholder": "Ex: Sentimos sua falta! / Lembrei de você...", "required": True},
@@ -363,12 +363,24 @@ def render_campaign_card(campaign: Campaign, service: CampaignService):
     """Renderiza card de uma campanha"""
     status_info = STATUS_DISPLAY.get(campaign.status, {"label": str(campaign.status), "color": "#64748b", "icon": "❓"})
 
+    # Obter info do tipo da campanha
+    campaign_type_key = "promotional"  # default
+    if hasattr(campaign, 'campaign_type') and campaign.campaign_type:
+        if hasattr(campaign.campaign_type, 'value'):
+            campaign_type_key = campaign.campaign_type.value
+        else:
+            campaign_type_key = str(campaign.campaign_type)
+
+    type_info = CAMPAIGN_TYPES.get(campaign_type_key, {"label": "Campanha", "icon": "📢"})
+
     # Container do card
     with st.container():
         col1, col2 = st.columns([4, 1])
 
         with col1:
             st.markdown(f"### {status_info['icon']} {campaign.name}")
+            # Mostrar tipo da campanha logo abaixo do nome
+            st.markdown(f"**{type_info['icon']} {type_info['label'].replace(type_info['icon'], '').strip()}**")
             if campaign.description:
                 st.caption(campaign.description)
 
@@ -420,6 +432,12 @@ def render_campaign_card(campaign: Campaign, service: CampaignService):
                 if st.button("⏹️ Encerrar", key=f"end_paused_{campaign.id}", use_container_width=True):
                     service.update_campaign(campaign.id, status=CampaignStatus.ENDED)
                     st.warning("Campanha encerrada")
+                    st.rerun()
+
+            elif campaign.status == CampaignStatus.ENDED:
+                if st.button("🔄 Reativar", key=f"reactivate_ended_{campaign.id}", use_container_width=True):
+                    service.update_campaign(campaign.id, status=CampaignStatus.ACTIVE)
+                    st.success("Campanha reativada!")
                     st.rerun()
 
         # Métricas
@@ -652,35 +670,11 @@ O tom deve ser empático, reconhecendo as objeções deles e mostrando que temos
         selected_tone = available_tones[selected_tone_idx]
 
         # =====================================================================
-        # ETAPA 6: TEMPLATE
+        # ETAPA 6: TEMPLATE (apenas placeholder - o real fica fora do form)
         # =====================================================================
         st.markdown("### 6️⃣ Template da Mensagem (META/WhatsApp)")
         st.caption("Use {{1}}, {{2}}, {{3}} para as variáveis que serão preenchidas pela IA")
-
-        # Sugerir template do tipo selecionado
-        suggested_template = selected_type_config.get('suggested_template', DEFAULT_TEMPLATE)
-
-        # Usar template existente se editando, senão sugerido
-        template_value = default_template if is_edit else suggested_template
-
-        template_text = st.text_area(
-            "Template *",
-            value=template_value,
-            height=150,
-            help="Template com variáveis {{1}}, {{2}}, {{3}} que serão substituídas"
-        )
-
-        # Preview do template
-        if template_text:
-            st.markdown("**Preview do Template:**")
-            preview_text = template_text.replace(
-                "{{1}}", "[NOME]"
-            ).replace(
-                "{{2}}", "[CONTEXTO PERSONALIZADO]"
-            ).replace(
-                "{{3}}", "[OFERTA/CTA]"
-            )
-            st.code(preview_text, language=None)
+        st.info("⬇️ O campo de Template está logo abaixo do formulário para permitir preview em tempo real")
 
         # =====================================================================
         # ETAPA 7: PERÍODO
@@ -721,6 +715,50 @@ O tom deve ser empático, reconhecendo as objeções deles e mostrando que temos
                 )
             else:
                 cancel = False
+
+    # =========================================================================
+    # TEMPLATE COM PREVIEW EM TEMPO REAL (fora do form)
+    # =========================================================================
+    st.markdown("---")
+    st.markdown("### 📝 Template da Mensagem")
+
+    # Sugerir template do tipo selecionado
+    suggested_template = selected_type_config.get('suggested_template', DEFAULT_TEMPLATE)
+
+    # Usar template existente se editando, senão sugerido
+    template_value = default_template if is_edit else suggested_template
+
+    # Inicializar session_state para o template se necessário
+    template_key = "campaign_template_text"
+    if template_key not in st.session_state:
+        st.session_state[template_key] = template_value
+
+    # Campo de template fora do form - atualiza em tempo real
+    template_text = st.text_area(
+        "Template *",
+        value=st.session_state.get(template_key, template_value),
+        height=150,
+        help="Template com variáveis {{1}}, {{2}}, {{3}} que serão substituídas pela IA",
+        key=template_key
+    )
+
+    # Preview em tempo real
+    if template_text:
+        st.markdown("**Preview em tempo real:**")
+        preview_text = template_text.replace(
+            "{{1}}", "**[NOME]**"
+        ).replace(
+            "{{2}}", "**[CONTEXTO PERSONALIZADO]**"
+        ).replace(
+            "{{3}}", "**[OFERTA/CTA]**"
+        )
+        st.markdown(f"""
+        <div style="background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 1rem; white-space: pre-wrap; font-family: system-ui;">
+{preview_text}
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("---")
 
     # =========================================================================
     # PROCESSAR SUBMISSÃO
@@ -851,8 +889,17 @@ def render_campaigns_list(service: CampaignService, status_filter: str = None):
 
     # Renderizar cada campanha
     for campaign in campaigns:
+        # Obter ícone do tipo da campanha
+        campaign_type_key = "promotional"
+        if hasattr(campaign, 'campaign_type') and campaign.campaign_type:
+            if hasattr(campaign.campaign_type, 'value'):
+                campaign_type_key = campaign.campaign_type.value
+            else:
+                campaign_type_key = str(campaign.campaign_type)
+        type_icon = CAMPAIGN_TYPES.get(campaign_type_key, {}).get('icon', '📢')
+
         with st.expander(
-            f"{STATUS_DISPLAY[campaign.status]['icon']} **{campaign.name}** - {campaign.period_display}",
+            f"{STATUS_DISPLAY[campaign.status]['icon']} - {type_icon} **{campaign.name}** - {campaign.period_display}",
             expanded=False
         ):
             render_campaign_card(campaign, service)
