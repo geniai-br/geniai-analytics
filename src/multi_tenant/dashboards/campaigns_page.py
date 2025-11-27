@@ -1142,50 +1142,94 @@ def render_leads_management(service: CampaignService, campaign_id: int):
 
 
 def render_add_leads_tab(service: CampaignService, campaign_id: int, campaign):
-    """Tab para adicionar leads"""
-    st.markdown("### Buscar Leads Elegíveis")
-    st.caption("Selecione leads do seu banco para adicionar à campanha")
+    """Tab para adicionar leads - Interface redesenhada para melhor UX"""
 
     # Constante de paginação
     LEADS_PER_PAGE = 50
 
-    # Filtros
-    filter_cols = st.columns([2, 1, 1, 1])
+    # Inicializar seleção
+    if 'selected_leads' not in st.session_state:
+        st.session_state['selected_leads'] = set()
 
-    with filter_cols[0]:
-        search_term = st.text_input("🔍 Buscar", placeholder="Nome ou telefone...", key="leads_search")
+    selected_count = len(st.session_state['selected_leads'])
 
-    with filter_cols[1]:
-        min_score = st.slider(
-            "Score mínimo",
-            0, 100, 50, 10,
-            help="Probabilidade de conversão calculada pela IA (0-100%)"
-        )
+    # =========================================================================
+    # BARRA FIXA DE AÇÃO (sempre visível no topo)
+    # =========================================================================
+    if selected_count > 0:
+        st.markdown(f"""
+        <div style="background: linear-gradient(90deg, #10B981 0%, #059669 100%); padding: 0.75rem 1rem; border-radius: 8px; margin-bottom: 1rem; display: flex; align-items: center; justify-content: space-between;">
+            <span style="color: white; font-weight: 600; font-size: 1rem;">
+                ✓ {selected_count} lead(s) selecionado(s)
+            </span>
+        </div>
+        """, unsafe_allow_html=True)
 
-    with filter_cols[2]:
-        only_remarketing = st.checkbox(
-            "Apenas remarketing",
-            False,
-            help="Mostra apenas leads que a IA identificou como bons candidatos para recontato"
-        )
+        btn_cols = st.columns([2, 1])
+        with btn_cols[0]:
+            if st.button(f"➕ Adicionar {selected_count} lead(s) à campanha", type="primary", use_container_width=True):
+                try:
+                    added = service.add_leads_to_campaign(campaign_id, list(st.session_state['selected_leads']))
+                    if added > 0:
+                        st.success(f"✅ {added} lead(s) adicionados com sucesso!")
+                        st.session_state['selected_leads'] = set()
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"Erro: {str(e)}")
+        with btn_cols[1]:
+            if st.button("✕ Limpar seleção", use_container_width=True):
+                st.session_state['selected_leads'] = set()
+                st.rerun()
 
-    with filter_cols[3]:
-        only_with_analysis = st.checkbox(
-            "Com análise IA",
-            True,
-            help="Mostra apenas leads já analisados pela IA (com score e objeções identificadas)"
-        )
+        st.markdown("---")
 
-    # Inicializar página no session_state
+    # =========================================================================
+    # FILTROS (expansível)
+    # =========================================================================
+    with st.expander("🔍 Filtros de busca", expanded=True):
+        filter_cols = st.columns([3, 2, 2, 2])
+
+        with filter_cols[0]:
+            search_term = st.text_input(
+                "Buscar por nome ou telefone",
+                placeholder="Digite para filtrar...",
+                key="leads_search",
+                label_visibility="collapsed"
+            )
+
+        with filter_cols[1]:
+            min_score = st.select_slider(
+                "Score mínimo",
+                options=[0, 30, 50, 70, 80, 90],
+                value=50,
+                format_func=lambda x: f"{x}%",
+                help="Probabilidade de conversão"
+            )
+
+        with filter_cols[2]:
+            only_remarketing = st.checkbox(
+                "🔄 Remarketing",
+                False,
+                help="Apenas candidatos a recontato"
+            )
+
+        with filter_cols[3]:
+            only_with_analysis = st.checkbox(
+                "🤖 Com análise IA",
+                True,
+                help="Apenas leads já analisados"
+            )
+
+    # =========================================================================
+    # BUSCA DE LEADS
+    # =========================================================================
     page_key = f"add_leads_page_{campaign_id}"
     if page_key not in st.session_state:
         st.session_state[page_key] = 1
 
-    # Calcular offset
     current_page = st.session_state[page_key]
     offset = (current_page - 1) * LEADS_PER_PAGE
 
-    # Buscar leads com paginação
     leads, total_count = service.get_eligible_leads(
         campaign_id=campaign_id,
         min_score=min_score,
@@ -1196,76 +1240,55 @@ def render_add_leads_tab(service: CampaignService, campaign_id: int, campaign):
         offset=offset
     )
 
-    # Calcular total de páginas
     total_pages = max(1, (total_count + LEADS_PER_PAGE - 1) // LEADS_PER_PAGE)
 
-    # Ajustar página se necessário
     if current_page > total_pages:
         st.session_state[page_key] = total_pages
         current_page = total_pages
 
-    # Info de paginação
+    # =========================================================================
+    # TOOLBAR: PAGINAÇÃO + SELEÇÃO RÁPIDA
+    # =========================================================================
     start_record = offset + 1 if total_count > 0 else 0
     end_record = min(offset + LEADS_PER_PAGE, total_count)
-    st.markdown(f"**{total_count}** leads elegíveis | Mostrando **{start_record}-{end_record}** | Página **{current_page}** de **{total_pages}**")
 
-    # Paginação (no topo)
-    if total_pages > 1:
-        pag_cols = st.columns([1, 2, 1])
+    toolbar_cols = st.columns([2, 1, 1, 1, 2])
 
-        with pag_cols[0]:
-            if st.button("◀️ Anterior", disabled=(current_page == 1), key=f"prev_leads_{campaign_id}", use_container_width=True):
-                st.session_state[page_key] = current_page - 1
-                st.rerun()
+    with toolbar_cols[0]:
+        st.markdown(f"**{total_count}** leads encontrados")
+        st.caption(f"Exibindo {start_record}-{end_record}")
 
-        with pag_cols[1]:
-            # Seletor de página
-            page_input = st.number_input(
-                "Página",
-                min_value=1,
-                max_value=total_pages,
-                value=current_page,
-                key=f"page_input_{campaign_id}",
-                label_visibility="collapsed"
-            )
-            if page_input != current_page:
-                st.session_state[page_key] = page_input
-                st.rerun()
-
-        with pag_cols[2]:
-            if st.button("Próximo ▶️", disabled=(current_page >= total_pages), key=f"next_leads_{campaign_id}", use_container_width=True):
-                st.session_state[page_key] = current_page + 1
-                st.rerun()
-
-    if not leads:
-        st.info("Nenhum lead encontrado com os filtros aplicados.")
-        return
-
-    # Seleção
-    if 'selected_leads' not in st.session_state:
-        st.session_state['selected_leads'] = set()
-
-    col1, col2, col3 = st.columns([1, 1, 2])
-    with col1:
-        if st.button("☑️ Selecionar Todos"):
-            st.session_state['selected_leads'] = {l['conversation_id'] for l in leads}
-            st.rerun()
-    with col2:
-        if st.button("☐ Limpar"):
-            st.session_state['selected_leads'] = set()
+    with toolbar_cols[1]:
+        if st.button("◀️", disabled=(current_page == 1), key=f"prev_{campaign_id}", help="Página anterior"):
+            st.session_state[page_key] = current_page - 1
             st.rerun()
 
-    selected_count = len(st.session_state['selected_leads'])
-    if selected_count > 0:
-        with col3:
-            st.success(f"**{selected_count}** selecionados")
+    with toolbar_cols[2]:
+        st.markdown(f"<div style='text-align: center; padding-top: 5px;'><b>{current_page}</b> / {total_pages}</div>", unsafe_allow_html=True)
+
+    with toolbar_cols[3]:
+        if st.button("▶️", disabled=(current_page >= total_pages), key=f"next_{campaign_id}", help="Próxima página"):
+            st.session_state[page_key] = current_page + 1
+            st.rerun()
+
+    with toolbar_cols[4]:
+        if st.button("☑️ Selecionar página", use_container_width=True, help="Seleciona todos os leads desta página"):
+            st.session_state['selected_leads'].update({l['conversation_id'] for l in leads})
+            st.rerun()
 
     st.markdown("---")
 
-    # Header das colunas
-    header_cols = st.columns([0.5, 2, 2, 1, 1])
+    # =========================================================================
+    # LISTA DE LEADS
+    # =========================================================================
+    if not leads:
+        st.info("🔍 Nenhum lead encontrado com os filtros aplicados. Tente ajustar os critérios.")
+        return
+
+    # Cabeçalho da tabela
+    header_cols = st.columns([0.3, 2.5, 2.5, 0.8, 0.6])
     with header_cols[0]:
-        st.caption("**SEL**")
+        st.caption("")
     with header_cols[1]:
         st.caption("**LEAD**")
     with header_cols[2]:
@@ -1273,14 +1296,18 @@ def render_add_leads_tab(service: CampaignService, campaign_id: int, campaign):
     with header_cols[3]:
         st.caption("**SCORE**")
     with header_cols[4]:
-        st.caption("**OBJ**")
+        st.caption("**INFO**")
 
     # Lista de leads
     for lead in leads:
         conv_id = lead['conversation_id']
         is_selected = conv_id in st.session_state['selected_leads']
+        score = lead['ai_probability_score']
 
-        cols = st.columns([0.5, 2, 2, 1, 1])
+        # Cor de fundo baseada na seleção
+        row_style = "background: rgba(16, 185, 129, 0.1); border-left: 3px solid #10B981;" if is_selected else ""
+
+        cols = st.columns([0.3, 2.5, 2.5, 0.8, 0.6])
 
         with cols[0]:
             if st.checkbox("", value=is_selected, key=f"sel_{conv_id}", label_visibility="collapsed"):
@@ -1294,43 +1321,39 @@ def render_add_leads_tab(service: CampaignService, campaign_id: int, campaign):
 
         with cols[2]:
             if lead.get('interesse'):
-                st.caption(f"🎯 {lead['interesse'][:40]}...")
+                st.caption(f"🎯 {lead['interesse'][:50]}...")
             elif lead.get('analise_ia'):
-                st.caption(f"{lead['analise_ia'][:50]}...")
+                st.caption(f"💬 {lead['analise_ia'][:50]}...")
             else:
                 st.caption("—")
 
         with cols[3]:
-            score = lead['ai_probability_score']
-            color = "🟢" if score >= 80 else "🟡" if score >= 50 else "🔴"
-            st.markdown(f"{color} **{score:.0f}%**")
+            # Badge colorido para score
+            if score >= 80:
+                st.markdown(f"<span style='background: #10B981; color: white; padding: 2px 8px; border-radius: 12px; font-weight: bold;'>{score:.0f}%</span>", unsafe_allow_html=True)
+            elif score >= 50:
+                st.markdown(f"<span style='background: #F59E0B; color: white; padding: 2px 8px; border-radius: 12px; font-weight: bold;'>{score:.0f}%</span>", unsafe_allow_html=True)
+            else:
+                st.markdown(f"<span style='background: #EF4444; color: white; padding: 2px 8px; border-radius: 12px; font-weight: bold;'>{score:.0f}%</span>", unsafe_allow_html=True)
 
         with cols[4]:
             objecoes = lead.get('objecoes', [])
-            if objecoes:
-                with st.popover(f"⚠️ {len(objecoes)}"):
-                    st.markdown("**Objeções identificadas:**")
-                    for obj in objecoes:
-                        st.markdown(f"• {obj}")
+            if objecoes or lead.get('analise_ia'):
+                with st.popover("📋"):
+                    if objecoes:
+                        st.markdown("**⚠️ Objeções:**")
+                        for obj in objecoes:
+                            st.markdown(f"• {obj}")
                     if lead.get('analise_ia'):
+                        if objecoes:
+                            st.markdown("---")
+                        st.markdown("**💬 Análise IA:**")
+                        st.caption(lead['analise_ia'][:400] + "..." if len(lead.get('analise_ia', '')) > 400 else lead['analise_ia'])
+                    if lead.get('precisa_remarketing'):
                         st.markdown("---")
-                        st.markdown("**Análise IA:**")
-                        st.caption(lead['analise_ia'][:300] + "..." if len(lead.get('analise_ia', '')) > 300 else lead['analise_ia'])
+                        st.success("🔄 Recomendado para remarketing")
             else:
                 st.caption("—")
-
-    # Botão adicionar
-    if selected_count > 0:
-        st.markdown("---")
-        if st.button(f"➕ Adicionar {selected_count} lead(s)", type="primary", use_container_width=True):
-            try:
-                added = service.add_leads_to_campaign(campaign_id, list(st.session_state['selected_leads']))
-                if added > 0:
-                    st.success(f"✅ {added} lead(s) adicionados!")
-                    st.session_state['selected_leads'] = set()
-                    st.rerun()
-            except Exception as e:
-                st.error(f"Erro: {str(e)}")
 
 
 def render_campaign_leads_tab(service: CampaignService, campaign_id: int, stats: dict):
