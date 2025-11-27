@@ -440,6 +440,13 @@ def render_campaign_card(campaign: Campaign, service: CampaignService):
                     st.success("Campanha reativada!")
                     st.rerun()
 
+        # Botão Gerenciar Leads (sempre disponível)
+        st.markdown("---")
+        if st.button("👥 Gerenciar Leads", key=f"leads_{campaign.id}", type="primary", use_container_width=True):
+            st.session_state['managing_campaign_id'] = campaign.id
+            st.session_state['campaigns_view'] = 'leads'
+            st.rerun()
+
         # Métricas
         st.markdown("---")
         metric_cols = st.columns(5)
@@ -1049,6 +1056,397 @@ def show_campaigns_page(session: dict, tenant_id: int = None):
         else:
             st.session_state['campaigns_view'] = 'list'
             st.rerun()
+
+    # View: Gerenciar Leads da Campanha
+    elif current_view == 'leads':
+        campaign_id = st.session_state.get('managing_campaign_id')
+        if campaign_id:
+            render_leads_management(service, campaign_id)
+        else:
+            st.session_state['campaigns_view'] = 'list'
+            st.rerun()
+
+
+# ============================================================================
+# GERENCIAMENTO DE LEADS
+# ============================================================================
+
+def render_leads_management(service: CampaignService, campaign_id: int):
+    """Interface para gerenciar leads de uma campanha"""
+    campaign = service.get_campaign(campaign_id)
+
+    if not campaign:
+        st.error("Campanha não encontrada")
+        st.session_state['campaigns_view'] = 'list'
+        return
+
+    # Header
+    col_back, col_title = st.columns([1, 5])
+
+    with col_back:
+        if st.button("← Voltar"):
+            if 'managing_campaign_id' in st.session_state:
+                del st.session_state['managing_campaign_id']
+            st.session_state['campaigns_view'] = 'list'
+            st.rerun()
+
+    with col_title:
+        type_info = CAMPAIGN_TYPES.get(
+            campaign.campaign_type.value if hasattr(campaign.campaign_type, 'value') else str(campaign.campaign_type),
+            {"label": "Campanha", "icon": "📢"}
+        )
+        st.markdown(f"## {type_info['icon']} {campaign.name}")
+        st.caption(f"{campaign.description or ''} | Período: {campaign.period_display}")
+
+    # Estatísticas
+    stats = service.get_campaign_stats(campaign_id)
+
+    st.markdown("---")
+
+    # Métricas
+    metric_cols = st.columns(6)
+    with metric_cols[0]:
+        st.metric("Total", stats['total'])
+    with metric_cols[1]:
+        st.metric("Pendentes", stats['pending'])
+    with metric_cols[2]:
+        st.metric("Processados", stats['processed'])
+    with metric_cols[3]:
+        st.metric("Exportados", stats['exported'])
+    with metric_cols[4]:
+        st.metric("Erros", stats['errors'])
+    with metric_cols[5]:
+        st.metric("Custo IA", f"R$ {stats['total_cost_brl']:.2f}")
+
+    st.markdown("---")
+
+    # Tabs
+    tab_add, tab_campaign, tab_process, tab_export = st.tabs([
+        "➕ Adicionar Leads",
+        "📋 Leads na Campanha",
+        "🤖 Processar com IA",
+        "📥 Exportar CSV"
+    ])
+
+    with tab_add:
+        render_add_leads_tab(service, campaign_id, campaign)
+
+    with tab_campaign:
+        render_campaign_leads_tab(service, campaign_id, stats)
+
+    with tab_process:
+        render_process_leads_tab(service, campaign_id, campaign, stats)
+
+    with tab_export:
+        render_export_tab(service, campaign_id, campaign, stats)
+
+
+def render_add_leads_tab(service: CampaignService, campaign_id: int, campaign):
+    """Tab para adicionar leads"""
+    st.markdown("### Buscar Leads Elegíveis")
+    st.caption("Selecione leads do seu banco para adicionar à campanha")
+
+    # Filtros
+    filter_cols = st.columns([2, 1, 1, 1])
+
+    with filter_cols[0]:
+        search_term = st.text_input("🔍 Buscar", placeholder="Nome ou telefone...", key="leads_search")
+
+    with filter_cols[1]:
+        min_score = st.slider(
+            "Score mínimo",
+            0, 100, 50, 10,
+            help="Probabilidade de conversão calculada pela IA (0-100%)"
+        )
+
+    with filter_cols[2]:
+        only_remarketing = st.checkbox(
+            "Apenas remarketing",
+            False,
+            help="Mostra apenas leads que a IA identificou como bons candidatos para recontato"
+        )
+
+    with filter_cols[3]:
+        only_with_analysis = st.checkbox(
+            "Com análise IA",
+            True,
+            help="Mostra apenas leads já analisados pela IA (com score e objeções identificadas)"
+        )
+
+    # Buscar leads
+    leads, total_count = service.get_eligible_leads(
+        campaign_id=campaign_id,
+        min_score=min_score,
+        only_with_analysis=only_with_analysis,
+        only_remarketing=only_remarketing,
+        search_term=search_term if search_term else None,
+        limit=50
+    )
+
+    st.markdown(f"**{total_count}** leads elegíveis encontrados")
+
+    if not leads:
+        st.info("Nenhum lead encontrado com os filtros aplicados.")
+        return
+
+    # Seleção
+    if 'selected_leads' not in st.session_state:
+        st.session_state['selected_leads'] = set()
+
+    col1, col2, col3 = st.columns([1, 1, 2])
+    with col1:
+        if st.button("☑️ Selecionar Todos"):
+            st.session_state['selected_leads'] = {l['conversation_id'] for l in leads}
+            st.rerun()
+    with col2:
+        if st.button("☐ Limpar"):
+            st.session_state['selected_leads'] = set()
+            st.rerun()
+
+    selected_count = len(st.session_state['selected_leads'])
+    if selected_count > 0:
+        with col3:
+            st.success(f"**{selected_count}** selecionados")
+
+    st.markdown("---")
+
+    # Header das colunas
+    header_cols = st.columns([0.5, 2, 2, 1, 1])
+    with header_cols[0]:
+        st.caption("**SEL**")
+    with header_cols[1]:
+        st.caption("**LEAD**")
+    with header_cols[2]:
+        st.caption("**INTERESSE / ANÁLISE**")
+    with header_cols[3]:
+        st.caption("**SCORE**")
+    with header_cols[4]:
+        st.caption("**OBJ**")
+
+    # Lista de leads
+    for lead in leads:
+        conv_id = lead['conversation_id']
+        is_selected = conv_id in st.session_state['selected_leads']
+
+        cols = st.columns([0.5, 2, 2, 1, 1])
+
+        with cols[0]:
+            if st.checkbox("", value=is_selected, key=f"sel_{conv_id}", label_visibility="collapsed"):
+                st.session_state['selected_leads'].add(conv_id)
+            else:
+                st.session_state['selected_leads'].discard(conv_id)
+
+        with cols[1]:
+            st.markdown(f"**{lead['nome_display']}**")
+            st.caption(f"📞 {lead['contact_phone']}")
+
+        with cols[2]:
+            if lead.get('interesse'):
+                st.caption(f"🎯 {lead['interesse'][:40]}...")
+            elif lead.get('analise_ia'):
+                st.caption(f"{lead['analise_ia'][:50]}...")
+            else:
+                st.caption("—")
+
+        with cols[3]:
+            score = lead['ai_probability_score']
+            color = "🟢" if score >= 80 else "🟡" if score >= 50 else "🔴"
+            st.markdown(f"{color} **{score:.0f}%**")
+
+        with cols[4]:
+            objecoes = lead.get('objecoes', [])
+            if objecoes:
+                st.caption(f"⚠️ {len(objecoes)}")
+            else:
+                st.caption("—")
+
+    # Botão adicionar
+    if selected_count > 0:
+        st.markdown("---")
+        if st.button(f"➕ Adicionar {selected_count} lead(s)", type="primary", use_container_width=True):
+            try:
+                added = service.add_leads_to_campaign(campaign_id, list(st.session_state['selected_leads']))
+                if added > 0:
+                    st.success(f"✅ {added} lead(s) adicionados!")
+                    st.session_state['selected_leads'] = set()
+                    st.rerun()
+            except Exception as e:
+                st.error(f"Erro: {str(e)}")
+
+
+def render_campaign_leads_tab(service: CampaignService, campaign_id: int, stats: dict):
+    """Tab dos leads na campanha"""
+    st.markdown("### Leads na Campanha")
+
+    if stats['total'] == 0:
+        st.info("Nenhum lead na campanha. Adicione leads na aba anterior.")
+        return
+
+    # Filtro
+    status_filter = st.selectbox("Status", ["Todos", "Pendentes", "Processados", "Exportados", "Erros"])
+
+    status_map = {"Pendentes": LeadStatus.PENDING, "Processados": LeadStatus.PROCESSED,
+                  "Exportados": LeadStatus.EXPORTED, "Erros": LeadStatus.ERROR}
+
+    leads = service.get_campaign_leads(campaign_id, status=status_map.get(status_filter), limit=100)
+
+    st.markdown(f"**{len(leads)}** leads")
+
+    for lead in leads:
+        icon = "✅" if lead.status == LeadStatus.PROCESSED else "⏳" if lead.status == LeadStatus.PENDING else "📤" if lead.status == LeadStatus.EXPORTED else "❌"
+
+        with st.expander(f"{icon} **{lead.contact_name or 'Sem nome'}** - {lead.contact_phone}"):
+            col1, col2 = st.columns([3, 1])
+
+            with col1:
+                st.text(f"Status: {lead.status.value}")
+                if lead.var1:
+                    st.markdown(f"**{{{{1}}}}:** {lead.var1}")
+                if lead.var2:
+                    st.markdown(f"**{{{{2}}}}:** {lead.var2[:80]}...")
+                if lead.var3:
+                    st.markdown(f"**{{{{3}}}}:** {lead.var3[:80]}...")
+                if lead.error_message:
+                    st.error(f"Erro: {lead.error_message}")
+
+            with col2:
+                if st.button("🗑️", key=f"rm_{lead.id}"):
+                    service.remove_lead_from_campaign(campaign_id, lead.id)
+                    st.rerun()
+
+
+def render_process_leads_tab(service: CampaignService, campaign_id: int, campaign, stats: dict):
+    """Tab para processar com IA"""
+    st.markdown("### Processar Leads com IA")
+
+    if stats['pending'] == 0:
+        if stats['total'] == 0:
+            st.info("Adicione leads primeiro.")
+        else:
+            st.success("✅ Todos processados!")
+        return
+
+    st.markdown(f"""
+    - **Pendentes:** {stats['pending']}
+    - **Custo estimado:** R$ {stats['pending'] * 0.003:.2f}
+    """)
+
+    with st.expander("📝 Contexto da IA"):
+        st.text(f"Tipo: {campaign.campaign_type.value}")
+        st.text(f"Tom: {campaign.tone.value}")
+        st.text(f"Briefing: {campaign.briefing or 'N/A'}")
+
+    batch_size = st.number_input("Quantidade", 1, min(stats['pending'], 20), min(stats['pending'], 5))
+
+    if st.button(f"🤖 Processar {batch_size} lead(s)", type="primary"):
+        process_leads_batch(service, campaign_id, campaign, batch_size)
+
+
+def process_leads_batch(service: CampaignService, campaign_id: int, campaign, batch_size: int):
+    """Processa leads com IA"""
+    from multi_tenant.campaigns import CampaignVariableGenerator
+    import os
+
+    api_key = os.getenv('OPENAI_API_KEY')
+    if not api_key:
+        st.error("❌ OPENAI_API_KEY não configurada!")
+        return
+
+    pending_leads = service.get_pending_leads(campaign_id, limit=batch_size)
+    if not pending_leads:
+        st.warning("Nenhum lead pendente")
+        return
+
+    try:
+        generator = CampaignVariableGenerator(api_key=api_key)
+    except Exception as e:
+        st.error(f"Erro: {str(e)}")
+        return
+
+    progress = st.progress(0)
+    status = st.empty()
+
+    processed, errors = 0, 0
+
+    for i, lead in enumerate(pending_leads):
+        status.text(f"Processando {lead.contact_name or 'Lead'}...")
+
+        try:
+            lead_details = service.get_lead_details(lead.conversation_id)
+            if not lead_details:
+                service.update_lead(lead.id, status=LeadStatus.ERROR, error_message="Lead não encontrado")
+                errors += 1
+                continue
+
+            result = generator.generate_for_lead(campaign, lead_details)
+
+            preview = campaign.template_text.replace("{{1}}", result.get('var1', '')).replace("{{2}}", result.get('var2', '')).replace("{{3}}", result.get('var3', ''))
+
+            service.update_lead(lead.id, var1=result.get('var1'), var2=result.get('var2'), var3=result.get('var3'),
+                               message_preview=preview, status=LeadStatus.PROCESSED, generation_metadata=result.get('metadata', {}))
+            processed += 1
+
+        except Exception as e:
+            service.update_lead(lead.id, status=LeadStatus.ERROR, error_message=str(e)[:200])
+            errors += 1
+
+        progress.progress((i + 1) / len(pending_leads))
+
+    status.empty()
+    progress.empty()
+
+    if processed:
+        st.success(f"✅ {processed} processados!")
+    if errors:
+        st.warning(f"⚠️ {errors} erros")
+
+    st.rerun()
+
+
+def render_export_tab(service: CampaignService, campaign_id: int, campaign, stats: dict):
+    """Tab para exportar CSV"""
+    from multi_tenant.campaigns import CampaignCSVExporter
+    from datetime import datetime
+
+    st.markdown("### Exportar CSV")
+
+    exportable = stats['processed'] + stats['exported']
+    if exportable == 0:
+        st.info("Nenhum lead processado. Processe primeiro na aba anterior.")
+        return
+
+    only_new = st.checkbox("Apenas não exportados", True)
+    leads = service.get_exportable_leads(campaign_id, only_not_exported=only_new)
+
+    if not leads:
+        st.info("Nenhum lead disponível.")
+        return
+
+    st.markdown(f"**{len(leads)}** leads para exportar")
+
+    with st.expander("👁️ Preview"):
+        for lead in leads[:3]:
+            st.text(f"{lead.contact_phone} | {lead.var1} | {(lead.var2 or '')[:30]}...")
+
+    if st.button(f"📥 Gerar CSV ({len(leads)} leads)", type="primary", use_container_width=True):
+        try:
+            leads_data = [{'telefone': l.contact_phone, 'nome': l.var1 or l.contact_name or 'você',
+                          'variavel_1': l.var2 or '', 'variavel_2': l.var3 or ''} for l in leads]
+            lead_ids = [l.id for l in leads]
+
+            exporter = CampaignCSVExporter(campaign_id)
+            csv_content = exporter.export(leads_data)
+
+            filename = f"campanha_{campaign.slug}_{datetime.now():%Y%m%d_%H%M}.csv"
+
+            service.register_export(campaign_id, filename, len(leads), lead_ids, file_size_bytes=len(csv_content.encode()))
+            service.mark_leads_as_exported(lead_ids, campaign_id)
+
+            st.download_button("📥 Baixar CSV", csv_content, filename, "text/csv", use_container_width=True)
+            st.success(f"✅ {len(leads)} leads exportados!")
+
+        except Exception as e:
+            st.error(f"Erro: {str(e)}")
 
 
 # ============================================================================

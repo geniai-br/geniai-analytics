@@ -1153,3 +1153,388 @@ class CampaignService:
         except Exception as e:
             logger.error(f"Erro ao contar campanhas: {e}")
             raise
+
+    # =========================================================================
+    # LEADS ELEGÍVEIS (conversations_analytics)
+    # =========================================================================
+
+    def get_eligible_leads(
+        self,
+        campaign_id: Optional[int] = None,
+        min_score: int = 0,
+        only_with_analysis: bool = True,
+        only_remarketing: bool = False,
+        exclude_already_in_campaign: bool = True,
+        search_term: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        """
+        Busca leads elegíveis da tabela conversations_analytics.
+
+        Esta função busca leads que podem ser adicionados a campanhas,
+        com filtros inteligentes baseados nos dados de análise de IA.
+
+        Args:
+            campaign_id: Se fornecido, exclui leads já na campanha
+            min_score: Score mínimo de probabilidade (0-100)
+            only_with_analysis: Se True, apenas leads com análise de IA
+            only_remarketing: Se True, apenas leads marcados para remarketing
+            exclude_already_in_campaign: Se True, exclui leads já em qualquer campanha ativa
+            search_term: Termo de busca (nome ou telefone)
+            limit: Máximo de registros
+            offset: Pular registros
+
+        Returns:
+            Tupla (lista de leads, total count)
+        """
+        # Query base com dados relevantes para campanhas
+        query_base = """
+            SELECT
+                ca.conversation_id,
+                ca.contact_name,
+                COALESCE(ca.nome_mapeado_bot, ca.contact_name) as nome_display,
+                ca.contact_phone,
+                ca.ai_probability_score,
+                ca.ai_probability_label,
+                ca.analise_ia,
+                ca.sugestao_disparo,
+                ca.dados_extraidos_ia,
+                ca.precisa_remarketing,
+                ca.nivel_interesse,
+                ca.is_lead,
+                ca.mc_last_message_at,
+                ca.inbox_name
+            FROM conversations_analytics ca
+            WHERE ca.tenant_id = :tenant_id
+              AND ca.is_lead = true
+              AND ca.contact_phone IS NOT NULL
+              AND ca.contact_phone != ''
+        """
+
+        count_query_base = """
+            SELECT COUNT(*)
+            FROM conversations_analytics ca
+            WHERE ca.tenant_id = :tenant_id
+              AND ca.is_lead = true
+              AND ca.contact_phone IS NOT NULL
+              AND ca.contact_phone != ''
+        """
+
+        params = {"tenant_id": self.tenant_id}
+
+        # Filtro: apenas com análise de IA
+        if only_with_analysis:
+            filter_clause = " AND ca.analise_ia IS NOT NULL AND ca.analise_ia != ''"
+            query_base += filter_clause
+            count_query_base += filter_clause
+
+        # Filtro: score mínimo
+        if min_score > 0:
+            filter_clause = " AND COALESCE(ca.ai_probability_score, 0) >= :min_score"
+            query_base += filter_clause
+            count_query_base += filter_clause
+            params["min_score"] = min_score
+
+        # Filtro: apenas remarketing
+        if only_remarketing:
+            filter_clause = " AND ca.precisa_remarketing = true"
+            query_base += filter_clause
+            count_query_base += filter_clause
+
+        # Filtro: excluir leads já em campanha específica
+        if campaign_id and exclude_already_in_campaign:
+            filter_clause = """
+                AND NOT EXISTS (
+                    SELECT 1 FROM campaign_leads cl
+                    WHERE cl.conversation_id = ca.conversation_id
+                    AND cl.campaign_id = :campaign_id
+                )
+            """
+            query_base += filter_clause
+            count_query_base += filter_clause
+            params["campaign_id"] = campaign_id
+
+        # Filtro: busca por termo (nome ou telefone)
+        if search_term and search_term.strip():
+            filter_clause = """
+                AND (
+                    LOWER(ca.contact_name) LIKE LOWER(:search_term)
+                    OR LOWER(ca.nome_mapeado_bot) LIKE LOWER(:search_term)
+                    OR ca.contact_phone LIKE :search_term
+                )
+            """
+            query_base += filter_clause
+            count_query_base += filter_clause
+            params["search_term"] = f"%{search_term.strip()}%"
+
+        # Ordenação e paginação
+        query_base += """
+            ORDER BY ca.ai_probability_score DESC NULLS LAST, ca.mc_last_message_at DESC
+            LIMIT :limit OFFSET :offset
+        """
+        params["limit"] = limit
+        params["offset"] = offset
+
+        try:
+            with self.engine.connect() as conn:
+                self._set_tenant_context(conn)
+
+                # Buscar total
+                count_result = conn.execute(text(count_query_base), params)
+                total_count = count_result.scalar() or 0
+
+                # Buscar leads
+                result = conn.execute(text(query_base), params)
+                rows = result.fetchall()
+
+                leads = []
+                for row in rows:
+                    # Extrair dados do JSON se disponível
+                    dados_ia = row[8] or {}
+                    if isinstance(dados_ia, str):
+                        try:
+                            dados_ia = json.loads(dados_ia)
+                        except:
+                            dados_ia = {}
+
+                    leads.append({
+                        "conversation_id": row[0],
+                        "contact_name": row[1],
+                        "nome_display": row[2] or row[1] or "Sem nome",
+                        "contact_phone": row[3],
+                        "ai_probability_score": float(row[4] or 0),
+                        "ai_probability_label": row[5] or "N/A",
+                        "analise_ia": row[6],
+                        "sugestao_disparo": row[7],
+                        "dados_extraidos_ia": dados_ia,
+                        "precisa_remarketing": row[9],
+                        "nivel_interesse": row[10],
+                        "is_lead": row[11],
+                        "last_message_at": row[12],
+                        "inbox_name": row[13],
+                        # Extrair campos úteis do JSON
+                        "interesse": dados_ia.get("interesse_mencionado", ""),
+                        "objecoes": dados_ia.get("objecoes", []),
+                        "urgencia": dados_ia.get("urgencia", ""),
+                    })
+
+                logger.info(f"Encontrados {len(leads)} leads elegíveis (total: {total_count})")
+                return leads, total_count
+
+        except Exception as e:
+            logger.error(f"Erro ao buscar leads elegíveis: {e}")
+            raise
+
+    def add_leads_to_campaign(
+        self,
+        campaign_id: int,
+        conversation_ids: List[int]
+    ) -> int:
+        """
+        Adiciona múltiplos leads a uma campanha.
+
+        Args:
+            campaign_id: ID da campanha
+            conversation_ids: Lista de IDs de conversas
+
+        Returns:
+            Quantidade de leads adicionados
+        """
+        if not conversation_ids:
+            return 0
+
+        # Verificar se campanha existe
+        campaign = self.get_campaign(campaign_id)
+        if not campaign:
+            raise ValueError(f"Campanha {campaign_id} não encontrada")
+
+        query = text("""
+            INSERT INTO campaign_leads (
+                campaign_id, conversation_id, contact_phone, contact_name, status
+            )
+            SELECT
+                :campaign_id,
+                ca.conversation_id,
+                ca.contact_phone,
+                COALESCE(ca.nome_mapeado_bot, ca.contact_name),
+                'pending'
+            FROM conversations_analytics ca
+            WHERE ca.tenant_id = :tenant_id
+              AND ca.conversation_id = ANY(:conversation_ids)
+              AND NOT EXISTS (
+                  SELECT 1 FROM campaign_leads cl
+                  WHERE cl.campaign_id = :campaign_id
+                  AND cl.conversation_id = ca.conversation_id
+              )
+        """)
+
+        try:
+            with self.engine.connect() as conn:
+                self._set_tenant_context(conn)
+
+                result = conn.execute(query, {
+                    "campaign_id": campaign_id,
+                    "tenant_id": self.tenant_id,
+                    "conversation_ids": conversation_ids
+                })
+
+                added_count = result.rowcount
+
+                # Atualizar métricas
+                if added_count > 0:
+                    self._update_campaign_metrics(conn, campaign_id)
+
+                conn.commit()
+
+                logger.info(f"Adicionados {added_count} leads à campanha {campaign_id}")
+                return added_count
+
+        except Exception as e:
+            logger.error(f"Erro ao adicionar leads à campanha: {e}")
+            raise
+
+    def remove_lead_from_campaign(
+        self,
+        campaign_id: int,
+        lead_id: int
+    ) -> bool:
+        """
+        Remove um lead de uma campanha.
+
+        Args:
+            campaign_id: ID da campanha
+            lead_id: ID do lead na campaign_leads
+
+        Returns:
+            True se removido
+        """
+        query = text("""
+            DELETE FROM campaign_leads
+            WHERE id = :lead_id AND campaign_id = :campaign_id
+        """)
+
+        try:
+            with self.engine.connect() as conn:
+                self._set_tenant_context(conn)
+
+                result = conn.execute(query, {
+                    "lead_id": lead_id,
+                    "campaign_id": campaign_id
+                })
+
+                removed = result.rowcount > 0
+
+                if removed:
+                    self._update_campaign_metrics(conn, campaign_id)
+
+                conn.commit()
+
+                if removed:
+                    logger.info(f"Lead {lead_id} removido da campanha {campaign_id}")
+
+                return removed
+
+        except Exception as e:
+            logger.error(f"Erro ao remover lead: {e}")
+            raise
+
+    def get_lead_details(
+        self,
+        conversation_id: int
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Busca detalhes completos de um lead para preview.
+
+        Args:
+            conversation_id: ID da conversa
+
+        Returns:
+            Dicionário com todos os dados do lead
+        """
+        query = text("""
+            SELECT
+                ca.conversation_id,
+                ca.display_id,
+                ca.contact_name,
+                COALESCE(ca.nome_mapeado_bot, ca.contact_name) as nome_display,
+                ca.contact_phone,
+                ca.contact_email,
+                ca.ai_probability_score,
+                ca.ai_probability_label,
+                ca.analise_ia,
+                ca.sugestao_disparo,
+                ca.dados_extraidos_ia,
+                ca.metadados_analise_ia,
+                ca.precisa_remarketing,
+                ca.nivel_interesse,
+                ca.mc_last_message_at,
+                ca.mc_first_message_at,
+                ca.inbox_name,
+                ca.status,
+                ca.tipo_conversa,
+                ca.total_messages
+            FROM conversations_analytics ca
+            WHERE ca.tenant_id = :tenant_id
+              AND ca.conversation_id = :conversation_id
+        """)
+
+        try:
+            with self.engine.connect() as conn:
+                self._set_tenant_context(conn)
+
+                result = conn.execute(query, {
+                    "tenant_id": self.tenant_id,
+                    "conversation_id": conversation_id
+                })
+
+                row = result.fetchone()
+                if not row:
+                    return None
+
+                # Processar JSON
+                dados_ia = row[10] or {}
+                if isinstance(dados_ia, str):
+                    try:
+                        dados_ia = json.loads(dados_ia)
+                    except:
+                        dados_ia = {}
+
+                metadados = row[11] or {}
+                if isinstance(metadados, str):
+                    try:
+                        metadados = json.loads(metadados)
+                    except:
+                        metadados = {}
+
+                return {
+                    "conversation_id": row[0],
+                    "display_id": row[1],
+                    "contact_name": row[2],
+                    "nome_display": row[3] or row[2] or "Sem nome",
+                    "contact_phone": row[4],
+                    "contact_email": row[5],
+                    "ai_probability_score": float(row[6] or 0),
+                    "ai_probability_label": row[7] or "N/A",
+                    "analise_ia": row[8],
+                    "sugestao_disparo": row[9],
+                    "dados_extraidos_ia": dados_ia,
+                    "metadados_analise_ia": metadados,
+                    "precisa_remarketing": row[12],
+                    "nivel_interesse": row[13],
+                    "last_message_at": row[14],
+                    "first_message_at": row[15],
+                    "inbox_name": row[16],
+                    "status": row[17],
+                    "tipo_conversa": row[18],
+                    "total_messages": row[19],
+                    # Campos extraídos do JSON
+                    "interesse": dados_ia.get("interesse_mencionado", ""),
+                    "objecoes": dados_ia.get("objecoes", []),
+                    "urgencia": dados_ia.get("urgencia", ""),
+                    "contexto_relevante": dados_ia.get("contexto_relevante", ""),
+                }
+
+        except Exception as e:
+            logger.error(f"Erro ao buscar detalhes do lead: {e}")
+            raise
