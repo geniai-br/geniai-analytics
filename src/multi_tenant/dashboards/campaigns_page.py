@@ -1256,7 +1256,14 @@ def render_add_leads_tab(service: CampaignService, campaign_id: int, campaign):
         with cols[4]:
             objecoes = lead.get('objecoes', [])
             if objecoes:
-                st.caption(f"⚠️ {len(objecoes)}")
+                with st.popover(f"⚠️ {len(objecoes)}"):
+                    st.markdown("**Objeções identificadas:**")
+                    for obj in objecoes:
+                        st.markdown(f"• {obj}")
+                    if lead.get('analise_ia'):
+                        st.markdown("---")
+                        st.markdown("**Análise IA:**")
+                        st.caption(lead['analise_ia'][:300] + "..." if len(lead.get('analise_ia', '')) > 300 else lead['analise_ia'])
             else:
                 st.caption("—")
 

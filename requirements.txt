@@ -7,7 +7,7 @@ openai==1.54.0
 
 # Optional: for data visualization in future dashboard
 plotly==5.18.0
-streamlit==1.29.0
+streamlit==1.40.0
 
 # Development dependencies
 ipython==8.19.0
