@@ -1146,6 +1146,9 @@ def render_add_leads_tab(service: CampaignService, campaign_id: int, campaign):
     st.markdown("### Buscar Leads Elegíveis")
     st.caption("Selecione leads do seu banco para adicionar à campanha")
 
+    # Constante de paginação
+    LEADS_PER_PAGE = 50
+
     # Filtros
     filter_cols = st.columns([2, 1, 1, 1])
 
@@ -1173,17 +1176,66 @@ def render_add_leads_tab(service: CampaignService, campaign_id: int, campaign):
             help="Mostra apenas leads já analisados pela IA (com score e objeções identificadas)"
         )
 
-    # Buscar leads
+    # Inicializar página no session_state
+    page_key = f"add_leads_page_{campaign_id}"
+    if page_key not in st.session_state:
+        st.session_state[page_key] = 1
+
+    # Calcular offset
+    current_page = st.session_state[page_key]
+    offset = (current_page - 1) * LEADS_PER_PAGE
+
+    # Buscar leads com paginação
     leads, total_count = service.get_eligible_leads(
         campaign_id=campaign_id,
         min_score=min_score,
         only_with_analysis=only_with_analysis,
         only_remarketing=only_remarketing,
         search_term=search_term if search_term else None,
-        limit=50
+        limit=LEADS_PER_PAGE,
+        offset=offset
     )
 
-    st.markdown(f"**{total_count}** leads elegíveis encontrados")
+    # Calcular total de páginas
+    total_pages = max(1, (total_count + LEADS_PER_PAGE - 1) // LEADS_PER_PAGE)
+
+    # Ajustar página se necessário
+    if current_page > total_pages:
+        st.session_state[page_key] = total_pages
+        current_page = total_pages
+
+    # Info de paginação
+    start_record = offset + 1 if total_count > 0 else 0
+    end_record = min(offset + LEADS_PER_PAGE, total_count)
+    st.markdown(f"**{total_count}** leads elegíveis | Mostrando **{start_record}-{end_record}** | Página **{current_page}** de **{total_pages}**")
+
+    # Paginação (no topo)
+    if total_pages > 1:
+        pag_cols = st.columns([1, 2, 1])
+
+        with pag_cols[0]:
+            if st.button("◀️ Anterior", disabled=(current_page == 1), key=f"prev_leads_{campaign_id}", use_container_width=True):
+                st.session_state[page_key] = current_page - 1
+                st.rerun()
+
+        with pag_cols[1]:
+            # Seletor de página
+            page_input = st.number_input(
+                "Página",
+                min_value=1,
+                max_value=total_pages,
+                value=current_page,
+                key=f"page_input_{campaign_id}",
+                label_visibility="collapsed"
+            )
+            if page_input != current_page:
+                st.session_state[page_key] = page_input
+                st.rerun()
+
+        with pag_cols[2]:
+            if st.button("Próximo ▶️", disabled=(current_page >= total_pages), key=f"next_leads_{campaign_id}", use_container_width=True):
+                st.session_state[page_key] = current_page + 1
+                st.rerun()
 
     if not leads:
         st.info("Nenhum lead encontrado com os filtros aplicados.")
