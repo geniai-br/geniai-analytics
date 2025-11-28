@@ -831,8 +831,8 @@ class CampaignService:
             params["error_message"] = error_message
 
         if generation_metadata is not None:
-            updates.append("generation_metadata = :generation_metadata::jsonb")
-            params["generation_metadata"] = str(generation_metadata).replace("'", '"')
+            updates.append("generation_metadata = CAST(:generation_metadata AS jsonb)")
+            params["generation_metadata"] = json.dumps(generation_metadata)
 
         if not updates:
             return False
@@ -945,7 +945,7 @@ class CampaignService:
                 file_size_bytes, exported_by, metadata, notes
             ) VALUES (
                 :campaign_id, :file_name, :leads_count,
-                :file_size_bytes, :exported_by, :metadata::jsonb, :notes
+                :file_size_bytes, :exported_by, CAST(:metadata AS jsonb), :notes
             )
             RETURNING id, exported_at
         """)
@@ -960,7 +960,7 @@ class CampaignService:
                     "leads_count": leads_count,
                     "file_size_bytes": file_size_bytes,
                     "exported_by": exported_by,
-                    "metadata": str(metadata).replace("'", '"'),
+                    "metadata": json.dumps(metadata),
                     "notes": notes
                 })
 
@@ -1538,3 +1538,71 @@ class CampaignService:
         except Exception as e:
             logger.error(f"Erro ao buscar detalhes do lead: {e}")
             raise
+
+    def reset_error_leads(self, campaign_id: int) -> int:
+        """
+        Reseta leads com erro para status pending, permitindo reprocessamento.
+
+        Args:
+            campaign_id: ID da campanha
+
+        Returns:
+            Quantidade de leads resetados
+        """
+        query = text("""
+            UPDATE campaign_leads
+            SET
+                status = 'pending',
+                error_message = NULL,
+                processed_at = NULL
+            WHERE campaign_id = :campaign_id
+              AND status = 'error'
+        """)
+
+        try:
+            with self.engine.connect() as conn:
+                self._set_tenant_context(conn)
+
+                result = conn.execute(query, {"campaign_id": campaign_id})
+                reset_count = result.rowcount
+
+                conn.commit()
+
+                if reset_count > 0:
+                    logger.info(f"Resetados {reset_count} leads com erro da campanha {campaign_id}")
+
+                return reset_count
+
+        except Exception as e:
+            logger.error(f"Erro ao resetar leads com erro: {e}")
+            raise
+
+    def _update_campaign_cost(self, campaign_id: int, additional_cost: float) -> None:
+        """
+        Atualiza o custo total da campanha somando um valor adicional.
+
+        Args:
+            campaign_id: ID da campanha
+            additional_cost: Custo adicional a ser somado (em BRL)
+        """
+        query = text("""
+            UPDATE campaigns
+            SET
+                total_cost_brl = COALESCE(total_cost_brl, 0) + :additional_cost,
+                updated_at = NOW()
+            WHERE id = :campaign_id
+        """)
+
+        try:
+            with self.engine.connect() as conn:
+                self._set_tenant_context(conn)
+                conn.execute(query, {
+                    "campaign_id": campaign_id,
+                    "additional_cost": additional_cost
+                })
+                conn.commit()
+
+                logger.debug(f"Atualizado custo da campanha {campaign_id}: +R$ {additional_cost:.3f}")
+
+        except Exception as e:
+            logger.error(f"Erro ao atualizar custo da campanha: {e}")

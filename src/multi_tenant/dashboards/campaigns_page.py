@@ -1398,91 +1398,401 @@ def render_campaign_leads_tab(service: CampaignService, campaign_id: int, stats:
 
 
 def render_process_leads_tab(service: CampaignService, campaign_id: int, campaign, stats: dict):
-    """Tab para processar com IA"""
-    st.markdown("### Processar Leads com IA")
+    """
+    Tab para processar leads com IA - Interface Profissional
 
-    if stats['pending'] == 0:
-        if stats['total'] == 0:
-            st.info("Adicione leads primeiro.")
-        else:
-            st.success("✅ Todos processados!")
+    Características:
+    - Progress bar em tempo real
+    - Estimativa de tempo restante
+    - Feedback visual por lead processado
+    - Possibilidade de reprocessar erros
+    - Estatísticas de custo
+    """
+    st.markdown("### 🤖 Processar Leads com IA")
+
+    # =========================================================================
+    # ESTADO: NENHUM LEAD
+    # =========================================================================
+    if stats['total'] == 0:
+        st.info("📋 Adicione leads à campanha primeiro na aba **➕ Adicionar Leads**.")
         return
+
+    # =========================================================================
+    # ESTADO: TODOS PROCESSADOS
+    # =========================================================================
+    if stats['pending'] == 0 and stats['errors'] == 0:
+        st.success("✅ Todos os leads foram processados com sucesso!")
+        st.markdown(f"""
+        **Resumo:**
+        - ✅ Processados: **{stats['processed']}**
+        - 📤 Exportados: **{stats['exported']}**
+        - 💰 Custo total: **R$ {stats['total_cost_brl']:.2f}**
+        """)
+        st.info("👉 Agora você pode exportar os leads na aba **📥 Exportar CSV**")
+        return
+
+    # =========================================================================
+    # CARDS DE STATUS
+    # =========================================================================
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.markdown(f"""
+        <div style="background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 1rem; text-align: center;">
+            <div style="font-size: 2rem; font-weight: bold; color: #F59E0B;">⏳ {stats['pending']}</div>
+            <div style="color: #94a3b8; font-size: 0.875rem;">Pendentes</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col2:
+        st.markdown(f"""
+        <div style="background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 1rem; text-align: center;">
+            <div style="font-size: 2rem; font-weight: bold; color: #10B981;">✅ {stats['processed']}</div>
+            <div style="color: #94a3b8; font-size: 0.875rem;">Processados</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col3:
+        st.markdown(f"""
+        <div style="background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 1rem; text-align: center;">
+            <div style="font-size: 2rem; font-weight: bold; color: #EF4444;">❌ {stats['errors']}</div>
+            <div style="color: #94a3b8; font-size: 0.875rem;">Erros</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # =========================================================================
+    # ESTIMATIVAS
+    # =========================================================================
+    pending_count = stats['pending']
+    error_count = stats['errors']
+
+    # Custo estimado (média de ~900 tokens por lead = ~R$ 0.003)
+    cost_per_lead = 0.003
+    estimated_cost = pending_count * cost_per_lead
+
+    # Tempo estimado (~2.5 segundos por lead incluindo rate limit)
+    time_per_lead = 2.5
+    estimated_time_seconds = pending_count * time_per_lead
+    estimated_time_min = estimated_time_seconds / 60
 
     st.markdown(f"""
-    - **Pendentes:** {stats['pending']}
-    - **Custo estimado:** R$ {stats['pending'] * 0.003:.2f}
+    **📊 Estimativas para {pending_count} leads pendentes:**
+    - ⏱️ Tempo estimado: **~{estimated_time_min:.1f} minutos** ({time_per_lead}s por lead)
+    - 💰 Custo estimado: **~R$ {estimated_cost:.2f}** (R$ {cost_per_lead:.3f} por lead)
     """)
 
-    with st.expander("📝 Contexto da IA"):
-        st.text(f"Tipo: {campaign.campaign_type.value}")
-        st.text(f"Tom: {campaign.tone.value}")
-        st.text(f"Briefing: {campaign.briefing or 'N/A'}")
+    # =========================================================================
+    # CONTEXTO DA CAMPANHA (EXPANSÍVEL)
+    # =========================================================================
+    with st.expander("📝 Ver contexto que a IA usará", expanded=False):
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown(f"**Tipo:** {campaign.campaign_type.icon} {campaign.campaign_type.label}")
+            st.markdown(f"**Tom:** {campaign.tone.icon} {campaign.tone.label}")
+        with col2:
+            if campaign.briefing:
+                st.markdown("**Briefing:**")
+                st.caption(campaign.briefing[:300] + "..." if len(campaign.briefing or "") > 300 else campaign.briefing)
 
-    batch_size = st.number_input("Quantidade", 1, min(stats['pending'], 20), min(stats['pending'], 5))
+        if campaign.promotional_context:
+            st.markdown("**Detalhes:**")
+            for k, v in campaign.promotional_context.items():
+                st.caption(f"• {k}: {v}")
 
-    if st.button(f"🤖 Processar {batch_size} lead(s)", type="primary"):
-        process_leads_batch(service, campaign_id, campaign, batch_size)
+    st.markdown("---")
+
+    # =========================================================================
+    # CONTROLES DE PROCESSAMENTO
+    # =========================================================================
+    st.markdown("### ▶️ Iniciar Processamento")
+
+    # Seleção de quantidade
+    max_batch = min(pending_count, 50)  # Máximo 50 por vez
+    default_batch = min(pending_count, 10)
+
+    col1, col2 = st.columns([2, 1])
+
+    with col1:
+        batch_size = st.slider(
+            "Quantidade de leads a processar",
+            min_value=1,
+            max_value=max_batch,
+            value=default_batch,
+            help="Recomendamos processar em lotes de 10-20 para melhor controle"
+        )
+
+    with col2:
+        st.markdown(f"""
+        <div style="padding-top: 1.5rem;">
+            ⏱️ ~{batch_size * time_per_lead / 60:.1f} min<br>
+            💰 ~R$ {batch_size * cost_per_lead:.2f}
+        </div>
+        """, unsafe_allow_html=True)
+
+    # Botão principal
+    if st.button(f"🚀 Processar {batch_size} lead(s)", type="primary", use_container_width=True):
+        process_leads_with_progress(service, campaign_id, campaign, batch_size)
+
+    # =========================================================================
+    # REPROCESSAR ERROS (SE HOUVER)
+    # =========================================================================
+    if error_count > 0:
+        st.markdown("---")
+        st.markdown("### 🔄 Reprocessar Leads com Erro")
+        st.warning(f"⚠️ {error_count} lead(s) falharam no processamento anterior.")
+
+        if st.button(f"🔄 Reprocessar {error_count} lead(s) com erro", use_container_width=True):
+            # Resetar status dos erros para pending
+            reset_count = service.reset_error_leads(campaign_id)
+            if reset_count > 0:
+                st.success(f"✅ {reset_count} leads resetados para reprocessamento!")
+                st.rerun()
+            else:
+                st.info("Nenhum lead para resetar.")
 
 
-def process_leads_batch(service: CampaignService, campaign_id: int, campaign, batch_size: int):
-    """Processa leads com IA"""
+def process_leads_with_progress(service: CampaignService, campaign_id: int, campaign, batch_size: int):
+    """
+    Processa leads com IA mostrando progresso em tempo real.
+
+    Características:
+    - Progress bar visual
+    - Status por lead processado
+    - Estimativa de tempo restante
+    - Tratamento de erros
+    - Resumo final com custos
+    """
     from multi_tenant.campaigns import CampaignVariableGenerator
     import os
+    import time
 
+    # =========================================================================
+    # VALIDAR API KEY
+    # =========================================================================
     api_key = os.getenv('OPENAI_API_KEY')
     if not api_key:
-        st.error("❌ OPENAI_API_KEY não configurada!")
+        st.error("❌ **OPENAI_API_KEY não configurada!**")
+        st.info("Configure a variável de ambiente OPENAI_API_KEY para usar o processamento com IA.")
         return
 
+    # =========================================================================
+    # BUSCAR LEADS PENDENTES
+    # =========================================================================
     pending_leads = service.get_pending_leads(campaign_id, limit=batch_size)
     if not pending_leads:
-        st.warning("Nenhum lead pendente")
+        st.warning("⚠️ Nenhum lead pendente para processar.")
         return
 
+    total_leads = len(pending_leads)
+
+    # =========================================================================
+    # INICIALIZAR GERADOR
+    # =========================================================================
     try:
-        generator = CampaignVariableGenerator(api_key=api_key)
+        engine = get_database_engine()
+        generator = CampaignVariableGenerator(
+            openai_api_key=api_key,
+            engine=engine,
+            tenant_id=service.tenant_id,
+            model="gpt-4o-mini",
+            temperature=0.7
+        )
     except Exception as e:
-        st.error(f"Erro: {str(e)}")
+        st.error(f"❌ Erro ao inicializar gerador de IA: {str(e)}")
         return
 
-    progress = st.progress(0)
-    status = st.empty()
+    # =========================================================================
+    # UI DE PROGRESSO
+    # =========================================================================
+    st.markdown("---")
+    st.markdown("### 🔄 Processando...")
 
-    processed, errors = 0, 0
+    # Containers para atualização em tempo real
+    progress_bar = st.progress(0)
+    status_container = st.empty()
+    current_lead_container = st.empty()
+    results_container = st.container()
 
+    # Estatísticas
+    processed_count = 0
+    error_count = 0
+    total_cost = 0.0
+    total_tokens = 0
+    start_time = time.time()
+
+    # Lista de resultados para exibição
+    results_log = []
+
+    # =========================================================================
+    # PROCESSAMENTO
+    # =========================================================================
     for i, lead in enumerate(pending_leads):
-        status.text(f"Processando {lead.contact_name or 'Lead'}...")
+        lead_start_time = time.time()
+
+        # Atualizar status
+        elapsed = time.time() - start_time
+        avg_time_per_lead = elapsed / (i + 1) if i > 0 else 2.5
+        remaining_leads = total_leads - i - 1
+        estimated_remaining = remaining_leads * avg_time_per_lead
+
+        status_container.markdown(f"""
+        **Progresso:** {i + 1}/{total_leads} leads ({((i + 1) / total_leads * 100):.0f}%)
+        | ✅ {processed_count} processados | ❌ {error_count} erros
+        | ⏱️ Restante: ~{estimated_remaining:.0f}s
+        """)
+
+        current_lead_container.info(f"🔄 Processando: **{lead.contact_name or 'Lead sem nome'}** ({lead.contact_phone})")
+
+        # Atualizar progress bar
+        progress_bar.progress((i + 1) / total_leads)
 
         try:
-            lead_details = service.get_lead_details(lead.conversation_id)
-            if not lead_details:
-                service.update_lead(lead.id, status=LeadStatus.ERROR, error_message="Lead não encontrado")
-                errors += 1
-                continue
+            # Gerar variáveis com IA
+            result = generator.generate_for_lead(campaign, lead)
 
-            result = generator.generate_for_lead(campaign, lead_details)
+            if result.get('status') == LeadStatus.PROCESSED:
+                # Sucesso!
+                var1 = result.get('var1', '')
+                var2 = result.get('var2', '')
+                var3 = result.get('var3', '')
+                metadata = result.get('metadata', {})
 
-            preview = campaign.template_text.replace("{{1}}", result.get('var1', '')).replace("{{2}}", result.get('var2', '')).replace("{{3}}", result.get('var3', ''))
+                # Gerar preview
+                preview = campaign.template_text
+                preview = preview.replace("{{1}}", var1)
+                preview = preview.replace("{{2}}", var2)
+                preview = preview.replace("{{3}}", var3)
 
-            service.update_lead(lead.id, var1=result.get('var1'), var2=result.get('var2'), var3=result.get('var3'),
-                               message_preview=preview, status=LeadStatus.PROCESSED, generation_metadata=result.get('metadata', {}))
-            processed += 1
+                # Salvar no banco
+                service.update_lead(
+                    lead_id=lead.id,
+                    var1=var1,
+                    var2=var2,
+                    var3=var3,
+                    message_preview=preview,
+                    status=LeadStatus.PROCESSED,
+                    generation_metadata=metadata
+                )
+
+                # Atualizar estatísticas
+                processed_count += 1
+                lead_cost = metadata.get('cost_brl', 0.003)
+                lead_tokens = metadata.get('tokens_total', 900)
+                total_cost += lead_cost
+                total_tokens += lead_tokens
+
+                results_log.append({
+                    'name': lead.contact_name or 'Lead',
+                    'status': 'success',
+                    'var1': var1,
+                    'cost': lead_cost
+                })
+
+            else:
+                # Erro na geração
+                error_msg = result.get('error_message', 'Erro desconhecido')
+                service.update_lead(
+                    lead_id=lead.id,
+                    status=LeadStatus.ERROR,
+                    error_message=error_msg[:200]
+                )
+                error_count += 1
+                results_log.append({
+                    'name': lead.contact_name or 'Lead',
+                    'status': 'error',
+                    'error': error_msg[:50]
+                })
 
         except Exception as e:
-            service.update_lead(lead.id, status=LeadStatus.ERROR, error_message=str(e)[:200])
-            errors += 1
+            # Erro inesperado
+            service.update_lead(
+                lead_id=lead.id,
+                status=LeadStatus.ERROR,
+                error_message=str(e)[:200]
+            )
+            error_count += 1
+            results_log.append({
+                'name': lead.contact_name or 'Lead',
+                'status': 'error',
+                'error': str(e)[:50]
+            })
 
-        progress.progress((i + 1) / len(pending_leads))
+    # =========================================================================
+    # FINALIZAÇÃO
+    # =========================================================================
+    total_time = time.time() - start_time
 
-    status.empty()
-    progress.empty()
+    # Limpar containers de progresso
+    progress_bar.empty()
+    status_container.empty()
+    current_lead_container.empty()
 
-    if processed:
-        st.success(f"✅ {processed} processados!")
-    if errors:
-        st.warning(f"⚠️ {errors} erros")
+    # Atualizar métricas da campanha
+    service._update_campaign_cost(campaign_id, total_cost)
 
-    st.rerun()
+    # =========================================================================
+    # RESUMO FINAL
+    # =========================================================================
+    st.markdown("---")
+    st.markdown("### ✅ Processamento Concluído!")
+
+    # Cards de resumo
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        st.markdown(f"""
+        <div style="background: #10B981; border-radius: 8px; padding: 1rem; text-align: center;">
+            <div style="font-size: 1.5rem; font-weight: bold; color: white;">✅ {processed_count}</div>
+            <div style="color: rgba(255,255,255,0.8); font-size: 0.875rem;">Processados</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col2:
+        st.markdown(f"""
+        <div style="background: {'#EF4444' if error_count > 0 else '#64748b'}; border-radius: 8px; padding: 1rem; text-align: center;">
+            <div style="font-size: 1.5rem; font-weight: bold; color: white;">❌ {error_count}</div>
+            <div style="color: rgba(255,255,255,0.8); font-size: 0.875rem;">Erros</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col3:
+        st.markdown(f"""
+        <div style="background: #3B82F6; border-radius: 8px; padding: 1rem; text-align: center;">
+            <div style="font-size: 1.5rem; font-weight: bold; color: white;">R$ {total_cost:.2f}</div>
+            <div style="color: rgba(255,255,255,0.8); font-size: 0.875rem;">Custo Total</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col4:
+        st.markdown(f"""
+        <div style="background: #8B5CF6; border-radius: 8px; padding: 1rem; text-align: center;">
+            <div style="font-size: 1.5rem; font-weight: bold; color: white;">{total_time:.1f}s</div>
+            <div style="color: rgba(255,255,255,0.8); font-size: 0.875rem;">Tempo Total</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # Detalhes
+    st.markdown(f"""
+    **📊 Detalhes:**
+    - Tokens utilizados: **{total_tokens:,}**
+    - Média por lead: **R$ {total_cost/max(processed_count, 1):.3f}** | **{total_time/total_leads:.1f}s**
+    """)
+
+    # Log de resultados
+    if results_log:
+        with st.expander("📋 Ver detalhes por lead", expanded=False):
+            for r in results_log:
+                if r['status'] == 'success':
+                    st.markdown(f"✅ **{r['name']}** → `{r['var1']}` (R$ {r['cost']:.3f})")
+                else:
+                    st.markdown(f"❌ **{r['name']}** → {r.get('error', 'Erro')}")
+
+    # Botão para continuar
+    st.markdown("---")
+    if st.button("🔄 Atualizar página", type="primary", use_container_width=True):
+        st.rerun()
 
 
 def render_export_tab(service: CampaignService, campaign_id: int, campaign, stats: dict):
@@ -1512,20 +1822,31 @@ def render_export_tab(service: CampaignService, campaign_id: int, campaign, stat
 
     if st.button(f"📥 Gerar CSV ({len(leads)} leads)", type="primary", use_container_width=True):
         try:
-            leads_data = [{'telefone': l.contact_phone, 'nome': l.var1 or l.contact_name or 'você',
-                          'variavel_1': l.var2 or '', 'variavel_2': l.var3 or ''} for l in leads]
             lead_ids = [l.id for l in leads]
 
-            exporter = CampaignCSVExporter(campaign_id)
-            csv_content = exporter.export(leads_data)
+            # Criar exporter e gerar CSV passando os objetos CampaignLead diretamente
+            exporter = CampaignCSVExporter()
+            csv_content, export_stats = exporter.export(leads, campaign)
 
             filename = f"campanha_{campaign.slug}_{datetime.now():%Y%m%d_%H%M}.csv"
 
-            service.register_export(campaign_id, filename, len(leads), lead_ids, file_size_bytes=len(csv_content.encode()))
+            # Registrar exportação no histórico
+            service.register_export(
+                campaign_id=campaign_id,
+                file_name=filename,
+                leads_count=export_stats['exported'],
+                lead_ids=lead_ids,
+                file_size_bytes=export_stats['file_size_bytes']
+            )
+
+            # Marcar leads como exportados
             service.mark_leads_as_exported(lead_ids, campaign_id)
 
             st.download_button("📥 Baixar CSV", csv_content, filename, "text/csv", use_container_width=True)
-            st.success(f"✅ {len(leads)} leads exportados!")
+            st.success(f"✅ {export_stats['exported']} leads exportados!")
+
+            if export_stats.get('skipped_no_phone', 0) > 0:
+                st.warning(f"⚠️ {export_stats['skipped_no_phone']} leads ignorados (sem telefone)")
 
         except Exception as e:
             st.error(f"Erro: {str(e)}")

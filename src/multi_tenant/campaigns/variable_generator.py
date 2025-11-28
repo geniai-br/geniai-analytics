@@ -220,7 +220,13 @@ RESPONDA APENAS EM JSON VÁLIDO (sem markdown, sem explicações):
 
     def _get_lead_analysis(self, conversation_id: int) -> Dict[str, Any]:
         """
-        Busca análise prévia do lead em conversas_analytics_ai.
+        Busca análise prévia do lead em conversations_analytics.
+
+        Os dados de análise estão armazenados em:
+        - analise_ia: Texto resumido da análise
+        - dados_extraidos_ia: JSON com interesse, objeções, etc.
+        - nivel_interesse: alto/medio/baixo/nenhum
+        - sugestao_disparo: Sugestão de mensagem
 
         Args:
             conversation_id: ID da conversa
@@ -235,14 +241,12 @@ RESPONDA APENAS EM JSON VÁLIDO (sem markdown, sem explicações):
                 ca.nome_mapeado_bot,
                 ca.message_compiled,
                 ca.mc_last_message_at,
-                cai.tipo_conversa,
-                cai.interesse,
-                cai.objetivo,
-                cai.objecoes,
-                cai.contexto_resumido,
-                cai.sugestao_remarketing
+                ca.tipo_conversa,
+                ca.nivel_interesse,
+                ca.analise_ia,
+                ca.sugestao_disparo,
+                ca.dados_extraidos_ia
             FROM conversations_analytics ca
-            LEFT JOIN conversas_analytics_ai cai ON ca.conversation_id = cai.conversation_id
             WHERE ca.conversation_id = :conversation_id
               AND ca.tenant_id = :tenant_id
         """)
@@ -263,16 +267,30 @@ RESPONDA APENAS EM JSON VÁLIDO (sem markdown, sem explicações):
                 delta = datetime.now() - row[4]
                 dias_inativo = delta.days
 
+            # Extrair dados do JSON (dados_extraidos_ia)
+            dados_ia = row[9] or {}
+            if isinstance(dados_ia, str):
+                try:
+                    dados_ia = json.loads(dados_ia)
+                except:
+                    dados_ia = {}
+
+            # Formatar objeções como string
+            objecoes = dados_ia.get("objecoes_identificadas", dados_ia.get("objecoes", []))
+            if isinstance(objecoes, list):
+                objecoes = ", ".join(objecoes) if objecoes else "nenhuma identificada"
+
             return {
                 "contact_name": row[2] or row[0] or "Lead",  # nome_mapeado_bot ou contact_name
                 "contact_phone": row[1] or "",
                 "tipo_conversa": row[5] or "não classificada",
-                "interesse": row[6] or "não identificado",
-                "objetivo": row[7] or "não identificado",
-                "objecoes": row[8] or "nenhuma identificada",
-                "contexto_conversa": row[9] or "conversa padrão",
-                "sugestao_remarketing": row[10] or "",
+                "interesse": dados_ia.get("interesse_mencionado", dados_ia.get("interesse", "não identificado")),
+                "objetivo": dados_ia.get("objetivo", "não identificado"),
+                "objecoes": objecoes,
+                "contexto_conversa": row[7] or dados_ia.get("contexto_resumido", "conversa padrão"),  # analise_ia
+                "sugestao_remarketing": row[8] or "",  # sugestao_disparo
                 "dias_inativo": dias_inativo,
+                "nivel_interesse": row[6] or "não definido",
             }
 
     def _build_prompt(
