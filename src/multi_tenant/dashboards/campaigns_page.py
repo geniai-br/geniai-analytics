@@ -1444,12 +1444,6 @@ def render_campaign_leads_tab(service: CampaignService, campaign_id: int, stats:
     with filter_cols[1]:
         show_exported = st.checkbox("Incluir já exportados", value=True, help="Mostra leads que já foram exportados")
 
-    with filter_cols[2]:
-        if st.button("☑️ Selecionar página", use_container_width=True):
-            for lead in leads:
-                st.session_state['selected_campaign_leads'].add(lead.id)
-            st.rerun()
-
     status_map = {
         "Pendentes": LeadStatus.PENDING,
         "Processados": LeadStatus.PROCESSED,
@@ -1466,6 +1460,12 @@ def render_campaign_leads_tab(service: CampaignService, campaign_id: int, stats:
     # Filtrar exportados se necessário
     if not show_exported and status_filter == "Todos":
         leads = [l for l in leads if l.status != LeadStatus.EXPORTED]
+
+    with filter_cols[2]:
+        if st.button("☑️ Selecionar página", use_container_width=True):
+            for lead in leads:
+                st.session_state['selected_campaign_leads'].add(lead.id)
+            st.rerun()
 
     st.markdown(f"**{len(leads)}** leads")
 
@@ -1670,7 +1670,7 @@ def render_process_leads_tab(service: CampaignService, campaign_id: int, campaig
     st.markdown(f"""
     **📊 Estimativas para {pending_count} leads pendentes:**
     - ⏱️ Tempo estimado: **~{estimated_time_min:.1f} minutos** ({time_per_lead}s por lead)
-    - 💰 Custo estimado: **~R$ {estimated_cost:.2f}** (R$ {cost_per_lead:.3f} por lead)
+    - 💰 Custo estimado: **~R$ {estimated_cost:.2f}** (~R$ 0,003 por lead)
     """)
 
     # =========================================================================
@@ -1705,19 +1705,26 @@ def render_process_leads_tab(service: CampaignService, campaign_id: int, campaig
     col1, col2 = st.columns([2, 1])
 
     with col1:
-        batch_size = st.slider(
-            "Quantidade de leads a processar",
-            min_value=1,
-            max_value=max_batch,
-            value=default_batch,
-            help="Recomendamos processar em lotes de 10-20 para melhor controle"
-        )
+        # Se só tem 1 lead, não precisa de slider
+        if max_batch <= 1:
+            batch_size = max_batch
+            st.info(f"📝 Será processado {batch_size} lead")
+        else:
+            batch_size = st.slider(
+                "Quantidade de leads a processar",
+                min_value=1,
+                max_value=max_batch,
+                value=default_batch,
+                help="Recomendamos processar em lotes de 10-20 para melhor controle"
+            )
 
     with col2:
+        batch_cost = batch_size * cost_per_lead
+        batch_time_min = batch_size * time_per_lead / 60
         st.markdown(f"""
         <div style="padding-top: 1.5rem;">
-            ⏱️ ~{batch_size * time_per_lead / 60:.1f} min<br>
-            💰 ~R$ {batch_size * cost_per_lead:.2f}
+            ⏱️ ~{batch_time_min:.1f} min<br>
+            💰 ~R$ {batch_cost:.2f}
         </div>
         """, unsafe_allow_html=True)
 
@@ -2077,22 +2084,23 @@ def render_export_history_tab(service: CampaignService, campaign_id: int, stats:
         with metric_cols[1]:
             st.markdown(f"""
             <div style="background: #3B82F6; border-radius: 8px; padding: 1rem; text-align: center;">
-                <div style="font-size: 2rem; font-weight: bold; color: white;">🔄 {summary['total_reexported']}</div>
+                <div style="font-size: 2rem; font-weight: bold; color: white;">🔄 {summary.get('exported_multiple', 0)}</div>
                 <div style="color: rgba(255,255,255,0.8); font-size: 0.875rem;">Re-exportados</div>
             </div>
             """, unsafe_allow_html=True)
 
         with metric_cols[2]:
-            avg_exports = summary['avg_export_count']
+            exported_once = summary.get('exported_once', 0)
+            exported_multiple = summary.get('exported_multiple', 0)
             st.markdown(f"""
             <div style="background: #10B981; border-radius: 8px; padding: 1rem; text-align: center;">
-                <div style="font-size: 2rem; font-weight: bold; color: white;">{avg_exports:.1f}x</div>
-                <div style="color: rgba(255,255,255,0.8); font-size: 0.875rem;">Média de Exports</div>
+                <div style="font-size: 2rem; font-weight: bold; color: white;">{exported_once}</div>
+                <div style="color: rgba(255,255,255,0.8); font-size: 0.875rem;">1x Exportados</div>
             </div>
             """, unsafe_allow_html=True)
 
         with metric_cols[3]:
-            max_exports = summary['max_export_count']
+            max_exports = summary.get('max_exports', 0)
             st.markdown(f"""
             <div style="background: #F59E0B; border-radius: 8px; padding: 1rem; text-align: center;">
                 <div style="font-size: 2rem; font-weight: bold; color: white;">{max_exports}x</div>
@@ -2102,12 +2110,17 @@ def render_export_history_tab(service: CampaignService, campaign_id: int, stats:
 
         st.markdown("---")
 
-        # Distribuição de exportações
-        if summary.get('export_distribution'):
-            st.markdown("**Distribuição de exportações por lead:**")
-            for count, num_leads in sorted(summary['export_distribution'].items()):
-                pct = (num_leads / summary['total_exported']) * 100
-                st.markdown(f"- **{count}x exportado:** {num_leads} leads ({pct:.1f}%)")
+        # Info de datas de exportação
+        if summary.get('first_export') or summary.get('last_export'):
+            st.markdown("**Período de exportações:**")
+            if summary.get('first_export'):
+                first_date = summary['first_export']
+                if hasattr(first_date, 'strftime'):
+                    st.markdown(f"- **Primeira:** {first_date.strftime('%d/%m/%Y %H:%M')}")
+            if summary.get('last_export'):
+                last_date = summary['last_export']
+                if hasattr(last_date, 'strftime'):
+                    st.markdown(f"- **Última:** {last_date.strftime('%d/%m/%Y %H:%M')}")
 
     st.markdown("---")
 
