@@ -1314,10 +1314,20 @@ def render_add_leads_tab(service: CampaignService, campaign_id: int, campaign):
         cols = st.columns([0.3, 2.5, 2.5, 0.8, 0.6])
 
         with cols[0]:
-            if st.checkbox("", value=is_selected, key=f"sel_{conv_id}", label_visibility="collapsed"):
-                st.session_state['selected_leads'].add(conv_id)
-            else:
-                st.session_state['selected_leads'].discard(conv_id)
+            # Callback para evitar problema de "um clique atrasado"
+            def toggle_lead(cid=conv_id):
+                if cid in st.session_state['selected_leads']:
+                    st.session_state['selected_leads'].discard(cid)
+                else:
+                    st.session_state['selected_leads'].add(cid)
+
+            st.checkbox(
+                "",
+                value=is_selected,
+                key=f"sel_{conv_id}",
+                label_visibility="collapsed",
+                on_change=toggle_lead
+            )
 
         with cols[1]:
             st.markdown(f"**{lead['nome_display']}**")
@@ -1506,10 +1516,20 @@ def render_campaign_leads_tab(service: CampaignService, campaign_id: int, stats:
         cols = st.columns([0.3, 2, 1.5, 0.8, 0.8, 1.2])
 
         with cols[0]:
-            if st.checkbox("", value=is_selected, key=f"sel_lead_{lead.id}", label_visibility="collapsed"):
-                st.session_state['selected_campaign_leads'].add(lead.id)
-            else:
-                st.session_state['selected_campaign_leads'].discard(lead.id)
+            # Callback para evitar problema de "um clique atrasado"
+            def toggle_campaign_lead(lid=lead.id):
+                if lid in st.session_state['selected_campaign_leads']:
+                    st.session_state['selected_campaign_leads'].discard(lid)
+                else:
+                    st.session_state['selected_campaign_leads'].add(lid)
+
+            st.checkbox(
+                "",
+                value=is_selected,
+                key=f"sel_lead_{lead.id}",
+                label_visibility="collapsed",
+                on_change=toggle_campaign_lead
+            )
 
         with cols[1]:
             st.markdown(f"**{lead.contact_name or 'Sem nome'}**")
