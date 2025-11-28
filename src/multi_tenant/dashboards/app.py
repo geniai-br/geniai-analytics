@@ -13,6 +13,9 @@ import streamlit as st
 from pathlib import Path
 import sys
 
+# Carregar variáveis de ambiente do .env
+from dotenv import load_dotenv
+load_dotenv()
 
 # ============================================================================
 # LIMPEZA DE SESSION_STATE LEGADO (Compatibilidade Streamlit 1.40+)

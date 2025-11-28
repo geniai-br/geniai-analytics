@@ -2287,20 +2287,22 @@ def render_remarketing_analysis_section(df, tenant_id, tenant_slug='tenant'):
             page_ids = set(leads_paginated['conversation_id'].tolist())
             all_page_selected = page_ids.issubset(st.session_state.selected_remarketing_leads)
 
-            select_all_page = st.checkbox(
+            # Callback para evitar problema de "um clique atrasado"
+            def toggle_select_all_page(pids=page_ids):
+                if pids.issubset(st.session_state.selected_remarketing_leads):
+                    # Todos selecionados, então desmarcar
+                    st.session_state.selected_remarketing_leads -= pids
+                else:
+                    # Nem todos selecionados, então marcar todos
+                    st.session_state.selected_remarketing_leads.update(pids)
+
+            st.checkbox(
                 "Selecionar todos (página)",
                 value=all_page_selected,
                 key="select_all_remarketing_page",
-                help="Selecionar/desselecionar todos os leads da página atual"
+                help="Selecionar/desselecionar todos os leads da página atual",
+                on_change=toggle_select_all_page
             )
-
-            # Atualizar seleção
-            if select_all_page:
-                st.session_state.selected_remarketing_leads.update(page_ids)
-            else:
-                # Só desmarcar se o checkbox foi desmarcado pelo usuário
-                if all_page_selected:
-                    st.session_state.selected_remarketing_leads -= page_ids
 
         with col_info_selected:
             num_selected = len(st.session_state.selected_remarketing_leads)
@@ -2344,19 +2346,22 @@ def render_remarketing_analysis_section(df, tenant_id, tenant_slug='tenant'):
             with col_check:
                 # Checkbox individual
                 is_selected = conv_id in st.session_state.selected_remarketing_leads
-                selected = st.checkbox(
+
+                # Callback para evitar problema de "um clique atrasado"
+                def toggle_remarketing_lead(cid=conv_id):
+                    if cid in st.session_state.selected_remarketing_leads:
+                        st.session_state.selected_remarketing_leads.discard(cid)
+                    else:
+                        st.session_state.selected_remarketing_leads.add(cid)
+
+                st.checkbox(
                     "Selecionar",
                     value=is_selected,
                     key=f"check_remarketing_{conv_id}",
                     label_visibility="collapsed",
-                    help="Selecionar/desselecionar este lead para disparo"
+                    help="Selecionar/desselecionar este lead para disparo",
+                    on_change=toggle_remarketing_lead
                 )
-
-                # Atualizar seleção
-                if selected:
-                    st.session_state.selected_remarketing_leads.add(conv_id)
-                else:
-                    st.session_state.selected_remarketing_leads.discard(conv_id)
 
             with col_id:
                 st.markdown(f"**#{row['conversation_display_id']}**")

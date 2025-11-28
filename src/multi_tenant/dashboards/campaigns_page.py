@@ -1121,11 +1121,12 @@ def render_leads_management(service: CampaignService, campaign_id: int):
     st.markdown("---")
 
     # Tabs
-    tab_add, tab_campaign, tab_process, tab_export = st.tabs([
+    tab_add, tab_campaign, tab_process, tab_export, tab_history = st.tabs([
         "➕ Adicionar Leads",
         "📋 Leads na Campanha",
         "🤖 Processar com IA",
-        "📥 Exportar CSV"
+        "📥 Exportar CSV",
+        "📊 Histórico"
     ])
 
     with tab_add:
@@ -1139,6 +1140,9 @@ def render_leads_management(service: CampaignService, campaign_id: int):
 
     with tab_export:
         render_export_tab(service, campaign_id, campaign, stats)
+
+    with tab_history:
+        render_export_history_tab(service, campaign_id, stats)
 
 
 def render_add_leads_tab(service: CampaignService, campaign_id: int, campaign):
@@ -1310,10 +1314,20 @@ def render_add_leads_tab(service: CampaignService, campaign_id: int, campaign):
         cols = st.columns([0.3, 2.5, 2.5, 0.8, 0.6])
 
         with cols[0]:
-            if st.checkbox("", value=is_selected, key=f"sel_{conv_id}", label_visibility="collapsed"):
-                st.session_state['selected_leads'].add(conv_id)
-            else:
-                st.session_state['selected_leads'].discard(conv_id)
+            # Callback para evitar problema de "um clique atrasado"
+            def toggle_lead(cid=conv_id):
+                if cid in st.session_state['selected_leads']:
+                    st.session_state['selected_leads'].discard(cid)
+                else:
+                    st.session_state['selected_leads'].add(cid)
+
+            st.checkbox(
+                "",
+                value=is_selected,
+                key=f"sel_{conv_id}",
+                label_visibility="collapsed",
+                on_change=toggle_lead
+            )
 
         with cols[1]:
             st.markdown(f"**{lead['nome_display']}**")
@@ -1357,44 +1371,240 @@ def render_add_leads_tab(service: CampaignService, campaign_id: int, campaign):
 
 
 def render_campaign_leads_tab(service: CampaignService, campaign_id: int, stats: dict):
-    """Tab dos leads na campanha"""
+    """Tab dos leads na campanha com gerenciamento de ciclo de vida"""
     st.markdown("### Leads na Campanha")
 
     if stats['total'] == 0:
         st.info("Nenhum lead na campanha. Adicione leads na aba anterior.")
         return
 
-    # Filtro
-    status_filter = st.selectbox("Status", ["Todos", "Pendentes", "Processados", "Exportados", "Erros"])
+    # Inicializar seleção para ações em lote
+    if 'selected_campaign_leads' not in st.session_state:
+        st.session_state['selected_campaign_leads'] = set()
 
-    status_map = {"Pendentes": LeadStatus.PENDING, "Processados": LeadStatus.PROCESSED,
-                  "Exportados": LeadStatus.EXPORTED, "Erros": LeadStatus.ERROR}
+    selected_count = len(st.session_state['selected_campaign_leads'])
 
-    leads = service.get_campaign_leads(campaign_id, status=status_map.get(status_filter), limit=100)
+    # =========================================================================
+    # BARRA DE AÇÕES EM LOTE (quando há seleção)
+    # =========================================================================
+    if selected_count > 0:
+        st.markdown(f"""
+        <div style="background: linear-gradient(90deg, #3B82F6 0%, #2563EB 100%); padding: 0.75rem 1rem; border-radius: 8px; margin-bottom: 1rem;">
+            <span style="color: white; font-weight: 600;">
+                ✓ {selected_count} lead(s) selecionado(s)
+            </span>
+        </div>
+        """, unsafe_allow_html=True)
+
+        action_cols = st.columns([1, 1, 1, 1])
+
+        with action_cols[0]:
+            if st.button("↩️ Voltar p/ Processado", key="batch_to_processed", use_container_width=True,
+                        help="Permite re-exportar estes leads"):
+                reset_count = service.reset_leads_batch(
+                    lead_ids=list(st.session_state['selected_campaign_leads']),
+                    campaign_id=campaign_id,
+                    new_status=LeadStatus.PROCESSED,
+                    clear_variables=False,
+                    reason="Reset manual em lote para reexportação"
+                )
+                st.success(f"✅ {reset_count} leads voltaram para Processado!")
+                st.session_state['selected_campaign_leads'] = set()
+                st.rerun()
+
+        with action_cols[1]:
+            if st.button("🔄 Regenerar Variáveis", key="batch_regenerate", use_container_width=True,
+                        help="Volta para Pendente e regenera variáveis com IA"):
+                regen_count = service.mark_leads_for_regeneration(
+                    lead_ids=list(st.session_state['selected_campaign_leads']),
+                    campaign_id=campaign_id,
+                    keep_history=True
+                )
+                st.success(f"✅ {regen_count} leads marcados para regeneração!")
+                st.session_state['selected_campaign_leads'] = set()
+                st.rerun()
+
+        with action_cols[2]:
+            if st.button("🗑️ Remover da Campanha", key="batch_remove", use_container_width=True):
+                for lid in st.session_state['selected_campaign_leads']:
+                    service.remove_lead_from_campaign(campaign_id, lid)
+                st.warning(f"Removidos {selected_count} leads da campanha")
+                st.session_state['selected_campaign_leads'] = set()
+                st.rerun()
+
+        with action_cols[3]:
+            if st.button("✕ Limpar seleção", key="batch_clear", use_container_width=True):
+                st.session_state['selected_campaign_leads'] = set()
+                st.rerun()
+
+        st.markdown("---")
+
+    # =========================================================================
+    # FILTROS
+    # =========================================================================
+    filter_cols = st.columns([2, 1, 1])
+
+    with filter_cols[0]:
+        status_filter = st.selectbox(
+            "Filtrar por Status",
+            ["Todos", "Pendentes", "Processados", "Exportados", "Erros"],
+            label_visibility="collapsed"
+        )
+
+    with filter_cols[1]:
+        show_exported = st.checkbox("Incluir já exportados", value=True, help="Mostra leads que já foram exportados")
+
+    status_map = {
+        "Pendentes": LeadStatus.PENDING,
+        "Processados": LeadStatus.PROCESSED,
+        "Exportados": LeadStatus.EXPORTED,
+        "Erros": LeadStatus.ERROR
+    }
+
+    leads = service.get_campaign_leads(
+        campaign_id,
+        status=status_map.get(status_filter),
+        limit=100
+    )
+
+    # Filtrar exportados se necessário
+    if not show_exported and status_filter == "Todos":
+        leads = [l for l in leads if l.status != LeadStatus.EXPORTED]
+
+    with filter_cols[2]:
+        if st.button("☑️ Selecionar página", use_container_width=True):
+            for lead in leads:
+                st.session_state['selected_campaign_leads'].add(lead.id)
+            st.rerun()
 
     st.markdown(f"**{len(leads)}** leads")
 
+    # =========================================================================
+    # CABEÇALHO DA LISTA
+    # =========================================================================
+    header_cols = st.columns([0.3, 2, 1.5, 0.8, 0.8, 1.2])
+    with header_cols[0]:
+        st.caption("")
+    with header_cols[1]:
+        st.caption("**LEAD**")
+    with header_cols[2]:
+        st.caption("**VARIÁVEIS**")
+    with header_cols[3]:
+        st.caption("**STATUS**")
+    with header_cols[4]:
+        st.caption("**EXPORTS**")
+    with header_cols[5]:
+        st.caption("**AÇÕES**")
+
+    # =========================================================================
+    # LISTA DE LEADS
+    # =========================================================================
     for lead in leads:
-        icon = "✅" if lead.status == LeadStatus.PROCESSED else "⏳" if lead.status == LeadStatus.PENDING else "📤" if lead.status == LeadStatus.EXPORTED else "❌"
+        is_selected = lead.id in st.session_state['selected_campaign_leads']
 
-        with st.expander(f"{icon} **{lead.contact_name or 'Sem nome'}** - {lead.contact_phone}"):
-            col1, col2 = st.columns([3, 1])
+        # Ícones por status
+        status_icons = {
+            LeadStatus.PENDING: ("⏳", "#F59E0B"),
+            LeadStatus.PROCESSING: ("🔄", "#3B82F6"),
+            LeadStatus.PROCESSED: ("✅", "#10B981"),
+            LeadStatus.EXPORTED: ("📤", "#8B5CF6"),
+            LeadStatus.ERROR: ("❌", "#EF4444"),
+            LeadStatus.SKIPPED: ("⏭️", "#9CA3AF"),
+        }
+        icon, color = status_icons.get(lead.status, ("❓", "#64748b"))
 
-            with col1:
-                st.text(f"Status: {lead.status.value}")
-                if lead.var1:
-                    st.markdown(f"**{{{{1}}}}:** {lead.var1}")
-                if lead.var2:
-                    st.markdown(f"**{{{{2}}}}:** {lead.var2[:80]}...")
-                if lead.var3:
-                    st.markdown(f"**{{{{3}}}}:** {lead.var3[:80]}...")
-                if lead.error_message:
-                    st.error(f"Erro: {lead.error_message}")
+        cols = st.columns([0.3, 2, 1.5, 0.8, 0.8, 1.2])
 
-            with col2:
-                if st.button("🗑️", key=f"rm_{lead.id}"):
+        with cols[0]:
+            # Callback para evitar problema de "um clique atrasado"
+            def toggle_campaign_lead(lid=lead.id):
+                if lid in st.session_state['selected_campaign_leads']:
+                    st.session_state['selected_campaign_leads'].discard(lid)
+                else:
+                    st.session_state['selected_campaign_leads'].add(lid)
+
+            st.checkbox(
+                "",
+                value=is_selected,
+                key=f"sel_lead_{lead.id}",
+                label_visibility="collapsed",
+                on_change=toggle_campaign_lead
+            )
+
+        with cols[1]:
+            st.markdown(f"**{lead.contact_name or 'Sem nome'}**")
+            st.caption(f"📞 {lead.contact_phone}")
+
+        with cols[2]:
+            if lead.var1:
+                st.caption(f"{{{{1}}}}: {lead.var1[:25]}...")
+            elif lead.status == LeadStatus.PENDING:
+                st.caption("_Aguardando processamento_")
+            elif lead.status == LeadStatus.ERROR:
+                st.caption(f"⚠️ {(lead.error_message or 'Erro')[:30]}")
+            else:
+                st.caption("—")
+
+        with cols[3]:
+            st.markdown(f"<span style='color: {color}; font-weight: bold;'>{icon} {lead.status.value}</span>", unsafe_allow_html=True)
+
+        with cols[4]:
+            # Contador de exportações
+            if lead.export_count > 0:
+                st.markdown(f"<span style='background: #8B5CF6; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.85rem;'>{lead.export_count}x</span>", unsafe_allow_html=True)
+            else:
+                st.caption("—")
+
+        with cols[5]:
+            # Botões de ação individuais
+            btn_col1, btn_col2 = st.columns(2)
+
+            with btn_col1:
+                # Ações baseadas no status
+                if lead.status == LeadStatus.EXPORTED:
+                    if st.button("↩️", key=f"reset_{lead.id}", help="Voltar para Processado (permite re-exportar)"):
+                        service.reset_lead_status(lead.id, LeadStatus.PROCESSED, reason="Reset manual")
+                        st.rerun()
+                elif lead.status in [LeadStatus.PROCESSED, LeadStatus.EXPORTED]:
+                    if st.button("🔄", key=f"regen_{lead.id}", help="Regenerar variáveis com IA"):
+                        service.reset_lead_status(lead.id, LeadStatus.PENDING, clear_variables=True, reason="Regeneração manual")
+                        st.rerun()
+
+            with btn_col2:
+                if st.button("🗑️", key=f"rm_{lead.id}", help="Remover da campanha"):
                     service.remove_lead_from_campaign(campaign_id, lead.id)
                     st.rerun()
+
+        # Expander com detalhes (opcional)
+        if lead.var1 or lead.var2 or lead.var3 or lead.message_preview:
+            with st.expander(f"📋 Ver detalhes de {lead.contact_name or 'Lead'}", expanded=False):
+                detail_cols = st.columns(2)
+                with detail_cols[0]:
+                    st.markdown("**Variáveis geradas:**")
+                    if lead.var1:
+                        st.markdown(f"**{{{{1}}}}:** {lead.var1}")
+                    if lead.var2:
+                        st.markdown(f"**{{{{2}}}}:** {lead.var2}")
+                    if lead.var3:
+                        st.markdown(f"**{{{{3}}}}:** {lead.var3}")
+
+                with detail_cols[1]:
+                    st.markdown("**Info de exportação:**")
+                    st.text(f"Exportado: {lead.export_count}x")
+                    if lead.last_exported_at:
+                        st.text(f"Última: {lead.last_exported_at.strftime('%d/%m/%Y %H:%M')}")
+
+                    # Mostrar histórico de resets se existir
+                    history = service.get_lead_history(lead.id)
+                    if history:
+                        st.markdown("**Histórico de alterações:**")
+                        for h in history[:3]:  # Últimos 3
+                            st.caption(f"• {h.get('from_status')} → {h.get('to_status')} ({h.get('reason', 'N/A')})")
+
+                if lead.message_preview:
+                    st.markdown("---")
+                    st.markdown("**Preview da mensagem:**")
+                    st.code(lead.message_preview, language=None)
 
 
 def render_process_leads_tab(service: CampaignService, campaign_id: int, campaign, stats: dict):
@@ -1480,7 +1690,7 @@ def render_process_leads_tab(service: CampaignService, campaign_id: int, campaig
     st.markdown(f"""
     **📊 Estimativas para {pending_count} leads pendentes:**
     - ⏱️ Tempo estimado: **~{estimated_time_min:.1f} minutos** ({time_per_lead}s por lead)
-    - 💰 Custo estimado: **~R$ {estimated_cost:.2f}** (R$ {cost_per_lead:.3f} por lead)
+    - 💰 Custo estimado: **~R$ {estimated_cost:.2f}** (~R$ 0,003 por lead)
     """)
 
     # =========================================================================
@@ -1515,19 +1725,26 @@ def render_process_leads_tab(service: CampaignService, campaign_id: int, campaig
     col1, col2 = st.columns([2, 1])
 
     with col1:
-        batch_size = st.slider(
-            "Quantidade de leads a processar",
-            min_value=1,
-            max_value=max_batch,
-            value=default_batch,
-            help="Recomendamos processar em lotes de 10-20 para melhor controle"
-        )
+        # Se só tem 1 lead, não precisa de slider
+        if max_batch <= 1:
+            batch_size = max_batch
+            st.info(f"📝 Será processado {batch_size} lead")
+        else:
+            batch_size = st.slider(
+                "Quantidade de leads a processar",
+                min_value=1,
+                max_value=max_batch,
+                value=default_batch,
+                help="Recomendamos processar em lotes de 10-20 para melhor controle"
+            )
 
     with col2:
+        batch_cost = batch_size * cost_per_lead
+        batch_time_min = batch_size * time_per_lead / 60
         st.markdown(f"""
         <div style="padding-top: 1.5rem;">
-            ⏱️ ~{batch_size * time_per_lead / 60:.1f} min<br>
-            💰 ~R$ {batch_size * cost_per_lead:.2f}
+            ⏱️ ~{batch_time_min:.1f} min<br>
+            💰 ~R$ {batch_cost:.2f}
         </div>
         """, unsafe_allow_html=True)
 
@@ -1807,7 +2024,7 @@ def render_export_tab(service: CampaignService, campaign_id: int, campaign, stat
         st.info("Nenhum lead processado. Processe primeiro na aba anterior.")
         return
 
-    only_new = st.checkbox("Apenas não exportados", True)
+    only_new = st.checkbox("Apenas não exportados", value=False, help="Desmarque para incluir leads já exportados anteriormente")
     leads = service.get_exportable_leads(campaign_id, only_not_exported=only_new)
 
     if not leads:
@@ -1850,6 +2067,177 @@ def render_export_tab(service: CampaignService, campaign_id: int, campaign, stat
 
         except Exception as e:
             st.error(f"Erro: {str(e)}")
+
+
+def render_export_history_tab(service: CampaignService, campaign_id: int, stats: dict):
+    """
+    Tab para visualizar histórico de exportações e resumo de leads exportados.
+
+    Mostra:
+    - Resumo estatístico dos leads exportados
+    - Histórico de todas as exportações realizadas
+    - Opção de resetar leads exportados para reprocessamento
+    """
+    st.markdown("### 📊 Histórico e Estatísticas")
+
+    # =========================================================================
+    # RESUMO DE LEADS EXPORTADOS
+    # =========================================================================
+    st.markdown("#### Resumo de Leads Exportados")
+
+    summary = service.get_exported_leads_summary(campaign_id)
+
+    if summary['total_exported'] == 0:
+        st.info("Nenhum lead foi exportado ainda nesta campanha.")
+    else:
+        # Cards de métricas
+        metric_cols = st.columns(4)
+
+        with metric_cols[0]:
+            st.markdown(f"""
+            <div style="background: #8B5CF6; border-radius: 8px; padding: 1rem; text-align: center;">
+                <div style="font-size: 2rem; font-weight: bold; color: white;">📤 {summary['total_exported']}</div>
+                <div style="color: rgba(255,255,255,0.8); font-size: 0.875rem;">Total Exportados</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with metric_cols[1]:
+            st.markdown(f"""
+            <div style="background: #3B82F6; border-radius: 8px; padding: 1rem; text-align: center;">
+                <div style="font-size: 2rem; font-weight: bold; color: white;">🔄 {summary.get('exported_multiple', 0)}</div>
+                <div style="color: rgba(255,255,255,0.8); font-size: 0.875rem;">Re-exportados</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with metric_cols[2]:
+            exported_once = summary.get('exported_once', 0)
+            exported_multiple = summary.get('exported_multiple', 0)
+            st.markdown(f"""
+            <div style="background: #10B981; border-radius: 8px; padding: 1rem; text-align: center;">
+                <div style="font-size: 2rem; font-weight: bold; color: white;">{exported_once}</div>
+                <div style="color: rgba(255,255,255,0.8); font-size: 0.875rem;">1x Exportados</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with metric_cols[3]:
+            max_exports = summary.get('max_exports', 0)
+            st.markdown(f"""
+            <div style="background: #F59E0B; border-radius: 8px; padding: 1rem; text-align: center;">
+                <div style="font-size: 2rem; font-weight: bold; color: white;">{max_exports}x</div>
+                <div style="color: rgba(255,255,255,0.8); font-size: 0.875rem;">Máx. Exports</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown("---")
+
+        # Info de datas de exportação
+        if summary.get('first_export') or summary.get('last_export'):
+            st.markdown("**Período de exportações:**")
+            if summary.get('first_export'):
+                first_date = summary['first_export']
+                if hasattr(first_date, 'strftime'):
+                    st.markdown(f"- **Primeira:** {first_date.strftime('%d/%m/%Y %H:%M')}")
+            if summary.get('last_export'):
+                last_date = summary['last_export']
+                if hasattr(last_date, 'strftime'):
+                    st.markdown(f"- **Última:** {last_date.strftime('%d/%m/%Y %H:%M')}")
+
+    st.markdown("---")
+
+    # =========================================================================
+    # HISTÓRICO DE EXPORTAÇÕES
+    # =========================================================================
+    st.markdown("#### Histórico de Exportações")
+
+    # Buscar histórico de exportações
+    exports = service.get_export_history(campaign_id, limit=20)
+
+    if not exports:
+        st.info("Nenhuma exportação registrada ainda.")
+    else:
+        st.markdown(f"**{len(exports)}** exportações realizadas")
+
+        for export in exports:
+            export_date = export.get('exported_at')
+            if export_date:
+                if isinstance(export_date, str):
+                    date_str = export_date
+                else:
+                    date_str = export_date.strftime('%d/%m/%Y %H:%M')
+            else:
+                date_str = "Data não registrada"
+
+            leads_count = export.get('leads_count', 0)
+            file_name = export.get('file_name', 'arquivo.csv')
+            file_size = export.get('file_size_bytes', 0)
+
+            # Formatar tamanho do arquivo
+            if file_size > 1024 * 1024:
+                size_str = f"{file_size / (1024 * 1024):.1f} MB"
+            elif file_size > 1024:
+                size_str = f"{file_size / 1024:.1f} KB"
+            else:
+                size_str = f"{file_size} bytes"
+
+            with st.expander(f"📥 {date_str} - {leads_count} leads - {file_name}", expanded=False):
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    st.markdown(f"**Arquivo:** `{file_name}`")
+                    st.markdown(f"**Leads exportados:** {leads_count}")
+                    st.markdown(f"**Tamanho:** {size_str}")
+
+                with col2:
+                    st.markdown(f"**Data/Hora:** {date_str}")
+                    if export.get('exported_by'):
+                        st.markdown(f"**Exportado por:** {export['exported_by']}")
+
+    st.markdown("---")
+
+    # =========================================================================
+    # AÇÕES EM MASSA PARA LEADS EXPORTADOS
+    # =========================================================================
+    st.markdown("#### Ações em Massa")
+
+    if stats['exported'] > 0:
+        st.warning(f"⚠️ Existem **{stats['exported']}** leads com status EXPORTED nesta campanha.")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.markdown("**Voltar todos para Processado:**")
+            st.caption("Permite re-exportar estes leads mantendo as variáveis geradas.")
+            if st.button("↩️ Resetar TODOS para Processado", key="reset_all_to_processed"):
+                # Buscar todos os leads exportados
+                exported_leads = service.get_campaign_leads(campaign_id, status=LeadStatus.EXPORTED, limit=1000)
+                lead_ids = [l.id for l in exported_leads]
+
+                reset_count = service.reset_leads_batch(
+                    lead_ids=lead_ids,
+                    campaign_id=campaign_id,
+                    new_status=LeadStatus.PROCESSED,
+                    clear_variables=False,
+                    reason="Reset em massa para reexportação"
+                )
+                st.success(f"✅ {reset_count} leads voltaram para Processado!")
+                st.rerun()
+
+        with col2:
+            st.markdown("**Regenerar variáveis de todos:**")
+            st.caption("Volta para Pendente e regenera variáveis com IA. Útil se o briefing mudou.")
+            if st.button("🔄 Regenerar TODOS exportados", key="regen_all_exported"):
+                exported_leads = service.get_campaign_leads(campaign_id, status=LeadStatus.EXPORTED, limit=1000)
+                lead_ids = [l.id for l in exported_leads]
+
+                regen_count = service.mark_leads_for_regeneration(
+                    lead_ids=lead_ids,
+                    campaign_id=campaign_id,
+                    keep_history=True
+                )
+                st.success(f"✅ {regen_count} leads marcados para regeneração!")
+                st.rerun()
+    else:
+        st.success("✅ Não há leads com status EXPORTED para ações em massa.")
 
 
 # ============================================================================
