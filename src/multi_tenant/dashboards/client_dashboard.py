@@ -20,6 +20,7 @@ if src_path not in sys.path:
 from multi_tenant.auth import get_database_engine, logout_user
 from multi_tenant.auth.middleware import clear_session_state, set_rls_context
 from multi_tenant.dashboards.branding import get_tenant_branding, apply_branding, render_header_with_logo
+from multi_tenant.dashboards.campaigns_page import show_campaigns_page
 from app.config import format_number, format_percentage
 
 
@@ -2650,6 +2651,35 @@ def show_client_dashboard(session, tenant_id=None):
         st.rerun()
 
     st.divider()
+
+    # === NAVEGAÇÃO POR ABAS === [FASE 10 - NOVO]
+    # Permitir alternar entre Analytics e Campanhas
+    # Usar session_state para persistir a seleção de aba
+    if 'dashboard_tab' not in st.session_state:
+        st.session_state.dashboard_tab = "analytics"
+
+    col_nav1, col_nav2, col_nav_spacer = st.columns([1, 1, 6])
+
+    with col_nav1:
+        if st.button("📊 Analytics", use_container_width=True,
+                     type="primary" if st.session_state.dashboard_tab == "analytics" else "secondary"):
+            st.session_state.dashboard_tab = "analytics"
+            st.rerun()
+
+    with col_nav2:
+        if st.button("📢 Campanhas", use_container_width=True,
+                     type="primary" if st.session_state.dashboard_tab == "campaigns" else "secondary"):
+            st.session_state.dashboard_tab = "campaigns"
+            st.rerun()
+
+    st.divider()
+
+    # Renderizar conteúdo baseado na aba selecionada
+    if st.session_state.dashboard_tab == "campaigns":
+        show_campaigns_page(session, tenant_id=display_tenant_id)
+        return  # Não renderizar o resto do dashboard
+
+    # === CONTEÚDO DE ANALYTICS (aba padrão) ===
 
     # === INICIALIZAR SESSION STATE DOS FILTROS RÁPIDOS === [FASE 4]
     # IMPORTANTE: Inicializar ANTES de detectar mudança de tenant

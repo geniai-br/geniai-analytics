@@ -13,6 +13,40 @@ import streamlit as st
 from pathlib import Path
 import sys
 
+
+# ============================================================================
+# LIMPEZA DE SESSION_STATE LEGADO (Compatibilidade Streamlit 1.40+)
+# ============================================================================
+
+def cleanup_stale_session_keys():
+    """
+    Remove chaves inválidas do session_state que podem causar KeyError
+    após atualização do Streamlit.
+
+    Chaves que começam com '$WIDGET_ID-' são internas do Streamlit
+    e podem ficar órfãs após atualizações de versão.
+
+    NOTA: NÃO remover FormSubmitter: pois são necessárias para formulários funcionarem.
+    """
+    if 'session_state' not in dir(st):
+        return
+
+    keys_to_remove = []
+    for key in list(st.session_state.keys()):
+        # Identificar chaves internas órfãs do Streamlit
+        # NÃO incluir FormSubmitter: pois é necessário para st.form funcionar
+        if isinstance(key, str) and (
+            key.startswith('$WIDGET_ID-') or
+            key.startswith('$$STREAMLIT')
+        ):
+            keys_to_remove.append(key)
+
+    for key in keys_to_remove:
+        try:
+            del st.session_state[key]
+        except (KeyError, RuntimeError):
+            pass  # Já foi removido ou está protegido
+
 # Adicionar src ao path
 src_path = str(Path(__file__).parent.parent.parent)
 if src_path not in sys.path:
@@ -57,6 +91,9 @@ def main():
 
     # Configurar página
     configure_page()
+
+    # Limpar chaves órfãs do session_state (compatibilidade Streamlit 1.40+)
+    cleanup_stale_session_keys()
 
     # ========================================
     # STEP 1: VERIFICAR AUTENTICAÇÃO
