@@ -1606,3 +1606,361 @@ class CampaignService:
 
         except Exception as e:
             logger.error(f"Erro ao atualizar custo da campanha: {e}")
+
+    # =========================================================================
+    # CICLO DE VIDA DOS LEADS - RESET E REGENERAÇÃO
+    # =========================================================================
+
+    def reset_lead_status(
+        self,
+        lead_id: int,
+        new_status: LeadStatus = LeadStatus.PROCESSED,
+        clear_variables: bool = False,
+        reason: Optional[str] = None
+    ) -> bool:
+        """
+        Reseta o status de um lead, permitindo re-exportação ou reprocessamento.
+
+        Casos de uso:
+        - Lead exportado precisa ser re-exportado (exported → processed)
+        - Lead exportado precisa novas variáveis (exported → pending, clear_variables=True)
+        - Lead processado precisa novas variáveis (processed → pending, clear_variables=True)
+
+        Args:
+            lead_id: ID do lead
+            new_status: Novo status (PENDING, PROCESSED ou EXPORTED)
+            clear_variables: Se True, limpa var1, var2, var3 e message_preview
+            reason: Motivo do reset (salvo em generation_metadata.reset_history)
+
+        Returns:
+            True se atualizado com sucesso
+        """
+        # Validar status permitidos para reset
+        allowed_statuses = [LeadStatus.PENDING, LeadStatus.PROCESSED, LeadStatus.EXPORTED]
+        if new_status not in allowed_statuses:
+            raise ValueError(f"Status {new_status} não é permitido para reset. Use: {allowed_statuses}")
+
+        # Buscar lead atual para salvar histórico
+        current_lead = self._get_lead_by_id(lead_id)
+        if not current_lead:
+            return False
+
+        # Montar update
+        updates = ["status = :new_status", "updated_at = NOW()"]
+        params = {"lead_id": lead_id, "new_status": str(new_status)}
+
+        # Se voltando para PENDING, resetar processed_at
+        if new_status == LeadStatus.PENDING:
+            updates.append("processed_at = NULL")
+
+        # Se clear_variables, limpar as variáveis mas salvar histórico
+        if clear_variables:
+            updates.extend([
+                "var1 = NULL",
+                "var2 = NULL",
+                "var3 = NULL",
+                "message_preview = NULL"
+            ])
+
+        # Salvar histórico no metadata
+        current_metadata = current_lead.get('generation_metadata') or {}
+        reset_history = current_metadata.get('reset_history', [])
+        reset_history.append({
+            "from_status": current_lead.get('status'),
+            "to_status": str(new_status),
+            "cleared_variables": clear_variables,
+            "reason": reason,
+            "timestamp": datetime.now().isoformat(),
+            "previous_vars": {
+                "var1": current_lead.get('var1'),
+                "var2": current_lead.get('var2'),
+                "var3": current_lead.get('var3')
+            } if clear_variables else None
+        })
+        current_metadata['reset_history'] = reset_history
+
+        updates.append("generation_metadata = CAST(:metadata AS jsonb)")
+        params["metadata"] = json.dumps(current_metadata)
+
+        query = text(f"""
+            UPDATE campaign_leads
+            SET {', '.join(updates)}
+            WHERE id = :lead_id
+        """)
+
+        try:
+            with self.engine.connect() as conn:
+                self._set_tenant_context(conn)
+                result = conn.execute(query, params)
+                conn.commit()
+
+                if result.rowcount > 0:
+                    logger.info(f"Lead {lead_id} resetado: {current_lead.get('status')} → {new_status}")
+                    return True
+                return False
+
+        except Exception as e:
+            logger.error(f"Erro ao resetar lead {lead_id}: {e}")
+            raise
+
+    def _get_lead_by_id(self, lead_id: int) -> Optional[Dict[str, Any]]:
+        """Busca lead por ID para operações internas"""
+        query = text("""
+            SELECT id, status, var1, var2, var3, generation_metadata
+            FROM campaign_leads
+            WHERE id = :lead_id
+        """)
+
+        try:
+            with self.engine.connect() as conn:
+                self._set_tenant_context(conn)
+                result = conn.execute(query, {"lead_id": lead_id})
+                row = result.fetchone()
+
+                if not row:
+                    return None
+
+                return {
+                    "id": row[0],
+                    "status": row[1],
+                    "var1": row[2],
+                    "var2": row[3],
+                    "var3": row[4],
+                    "generation_metadata": row[5]
+                }
+
+        except Exception as e:
+            logger.error(f"Erro ao buscar lead {lead_id}: {e}")
+            return None
+
+    def reset_leads_batch(
+        self,
+        lead_ids: List[int],
+        campaign_id: int,
+        new_status: LeadStatus = LeadStatus.PROCESSED,
+        clear_variables: bool = False,
+        reason: Optional[str] = None
+    ) -> int:
+        """
+        Reseta múltiplos leads em lote.
+
+        Args:
+            lead_ids: Lista de IDs dos leads
+            campaign_id: ID da campanha (para validação)
+            new_status: Novo status
+            clear_variables: Se True, limpa variáveis
+            reason: Motivo do reset
+
+        Returns:
+            Quantidade de leads resetados
+        """
+        if not lead_ids:
+            return 0
+
+        # Validar status
+        allowed_statuses = [LeadStatus.PENDING, LeadStatus.PROCESSED, LeadStatus.EXPORTED]
+        if new_status not in allowed_statuses:
+            raise ValueError(f"Status {new_status} não é permitido para reset")
+
+        updates = ["status = :new_status", "updated_at = NOW()"]
+        params = {
+            "lead_ids": lead_ids,
+            "campaign_id": campaign_id,
+            "new_status": str(new_status)
+        }
+
+        if new_status == LeadStatus.PENDING:
+            updates.append("processed_at = NULL")
+
+        if clear_variables:
+            updates.extend([
+                "var1 = NULL",
+                "var2 = NULL",
+                "var3 = NULL",
+                "message_preview = NULL"
+            ])
+
+        query = text(f"""
+            UPDATE campaign_leads
+            SET {', '.join(updates)}
+            WHERE id = ANY(:lead_ids)
+              AND campaign_id = :campaign_id
+        """)
+
+        try:
+            with self.engine.connect() as conn:
+                self._set_tenant_context(conn)
+                result = conn.execute(query, params)
+
+                reset_count = result.rowcount
+
+                # Atualizar métricas da campanha
+                if reset_count > 0:
+                    self._update_campaign_metrics(conn, campaign_id)
+
+                conn.commit()
+
+                logger.info(f"Resetados {reset_count} leads para status {new_status}")
+                return reset_count
+
+        except Exception as e:
+            logger.error(f"Erro ao resetar leads em lote: {e}")
+            raise
+
+    def mark_leads_for_regeneration(
+        self,
+        lead_ids: List[int],
+        campaign_id: int,
+        keep_history: bool = True
+    ) -> int:
+        """
+        Marca leads para regeneração de variáveis (volta para PENDING).
+
+        Diferente de reset_leads_batch, este método:
+        - Sempre volta para PENDING
+        - Sempre limpa variáveis
+        - Opcionalmente mantém histórico das variáveis anteriores
+
+        Args:
+            lead_ids: Lista de IDs dos leads
+            campaign_id: ID da campanha
+            keep_history: Se True, salva variáveis anteriores no metadata
+
+        Returns:
+            Quantidade de leads marcados para regeneração
+        """
+        if not lead_ids:
+            return 0
+
+        if keep_history:
+            # Precisamos buscar as variáveis atuais antes de limpar
+            # Fazer um por um para manter o histórico
+            count = 0
+            for lead_id in lead_ids:
+                success = self.reset_lead_status(
+                    lead_id=lead_id,
+                    new_status=LeadStatus.PENDING,
+                    clear_variables=True,
+                    reason="Marcado para regeneração de variáveis"
+                )
+                if success:
+                    count += 1
+            return count
+        else:
+            # Pode fazer em batch sem histórico
+            return self.reset_leads_batch(
+                lead_ids=lead_ids,
+                campaign_id=campaign_id,
+                new_status=LeadStatus.PENDING,
+                clear_variables=True,
+                reason="Regeneração em lote"
+            )
+
+    def get_lead_history(self, lead_id: int) -> List[Dict[str, Any]]:
+        """
+        Retorna o histórico de resets de um lead.
+
+        Args:
+            lead_id: ID do lead
+
+        Returns:
+            Lista de eventos de reset (do mais recente ao mais antigo)
+        """
+        lead = self._get_lead_by_id(lead_id)
+        if not lead:
+            return []
+
+        metadata = lead.get('generation_metadata') or {}
+        history = metadata.get('reset_history', [])
+
+        # Retornar do mais recente ao mais antigo
+        return list(reversed(history))
+
+    def get_exported_leads_summary(self, campaign_id: int) -> Dict[str, Any]:
+        """
+        Retorna resumo dos leads exportados de uma campanha.
+
+        Args:
+            campaign_id: ID da campanha
+
+        Returns:
+            Dicionário com estatísticas de exportação
+        """
+        query = text("""
+            SELECT
+                COUNT(*) as total_exported,
+                COUNT(*) FILTER (WHERE export_count = 1) as exported_once,
+                COUNT(*) FILTER (WHERE export_count > 1) as exported_multiple,
+                MAX(export_count) as max_exports,
+                MIN(last_exported_at) as first_export,
+                MAX(last_exported_at) as last_export
+            FROM campaign_leads
+            WHERE campaign_id = :campaign_id
+              AND status = 'exported'
+        """)
+
+        try:
+            with self.engine.connect() as conn:
+                self._set_tenant_context(conn)
+                result = conn.execute(query, {"campaign_id": campaign_id})
+                row = result.fetchone()
+
+                return {
+                    "total_exported": row[0] or 0,
+                    "exported_once": row[1] or 0,
+                    "exported_multiple": row[2] or 0,
+                    "max_exports": row[3] or 0,
+                    "first_export": row[4],
+                    "last_export": row[5]
+                }
+
+        except Exception as e:
+            logger.error(f"Erro ao buscar resumo de exportados: {e}")
+            return {}
+
+    def get_export_history(self, campaign_id: int, limit: int = 20) -> List[Dict[str, Any]]:
+        """
+        Retorna histórico de exportações de uma campanha.
+
+        Args:
+            campaign_id: ID da campanha
+            limit: Número máximo de exportações a retornar
+
+        Returns:
+            Lista de exportações com detalhes
+        """
+        query = text("""
+            SELECT
+                id,
+                exported_at,
+                exported_by,
+                leads_count,
+                file_name,
+                metadata
+            FROM campaign_exports
+            WHERE campaign_id = :campaign_id
+            ORDER BY exported_at DESC
+            LIMIT :limit
+        """)
+
+        try:
+            with self.engine.connect() as conn:
+                self._set_tenant_context(conn)
+                result = conn.execute(query, {"campaign_id": campaign_id, "limit": limit})
+
+                exports = []
+                for row in result.fetchall():
+                    exports.append({
+                        "id": row[0],
+                        "exported_at": row[1],
+                        "exported_by": row[2],
+                        "total_leads": row[3],
+                        "filename": row[4],
+                        "metadata": row[5] if row[5] else {}
+                    })
+
+                return exports
+
+        except Exception as e:
+            logger.error(f"Erro ao buscar histórico de exportações: {e}")
+            return []
